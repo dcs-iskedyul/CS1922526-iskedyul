@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html{
+    scroll-behavior: smooth;
+}
+
+*{
+    font-family:'Open Sans', sans-serif;
+}
+
+h1, h2, h3, .montserrat {
+    font-family: 'Montserrat', sans-serif;
+}
+
+.bgGrid{
+    background-size: 40px 40px;
+    background-image: linear-gradient(to right, grey 1px, transparent 1px), linear-gradient(to bottom, grey 1px, transparent 1px)
+}
+
+
+/*------------main page for each schedule---------------*/
+.view-btns {
+  margin-right:0;
+  margin-left: auto;
+}
+.sched-view-btn {
+  background-color: #E1E1E1;
+  padding-left: 24px;
+  padding-right: 24px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+
+  border-radius: 60px;
+  margin-right: 10px;
+}
+
+.sched-view-name {
+  font-size: x-large;
+  font-weight: bold;
+  
+}
+
+
+
+
+
+/*-------------instructor table---------------*/
+
+
+.instructor-container {
+  width: 100%;
+  max-width: 1000px;
+  align-content: center;
+  margin: 15px auto;
+}
+.instructor-table thead{
+  background-color: #ffffff;
+  
+}
+.instructor-table th{
+  padding: 10px;
+}
+
+
+
+.instructor-cell div {
+  width: 100%;
+  height:100%;
+  padding: 30px;
+  background-color: #9CE1B7;
+  border-radius: 20px;
+}
+.instructor-table p {
+  font-size: small;
+}
+
+
+.instructor-table td {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.ins-subject, .ins-room, .ins-remarks {
+  padding-left: 20px;
+  padding-right: 30px;
+}
+
+.instructor-title {
+  font-size: x-large;
+  text-align: center;
+  padding-top: 50px;
+
+}
+
+
+/*----------------venue table --------------------*/
+/*---------------Table Style--------------*/
+.room-list {
+  margin: 50px;
+}
+.room-name{
+  font-size: larger;
+  font-weight: bold;
+  background-color: white;
+}
+
+.room-header {
+  padding: 10px;
+  text-align: center;
+}
+.table-container {
+  width:100%;
+    min-width: 30vw;
+    margin-bottom: 100px;
+    overflow-x: auto;
+    margin-right: 256px;
+    padding-top: 0.5;
+    align-content: center;
+    
+  }
+
+.event {
+    padding: 5px;
+    color: white;
+    border-radius: 4px;
+    text-align: center;
+  }
+
+
+  .details{
+    font-size: 10px;
+    line-height: 150%;
+    max-width: 90%;
+    text-align: center;
+  }
+
+  /* Alternate row colors */
+  .venue-table tbody tr:nth-of-type(4n), .venue-table tr:nth-of-type(4n-1) {
+    background-color: white;
+  }
+
+  .venue-table tbody tr:nth-of-type(4n-2), .venue-table tr:nth-of-type(4n-3) {
+    background-color: #f4f4f9;
+  }
+
+
+  /*------------time formatting----------*/
+
+  .time {
+    background-color: white;
+  }
+  .venue-table td:first-child p {
+    color: #808080;
+  }
+
+  .venue-table th:first-child{
+    background-color: white;
+  }
+
+  /*time: 30 minute increments*/
+  .venue-table tr:nth-of-type(2n) td:first-child p {
+    visibility: hidden;
+    
+  }
+
+  .venue-table .blank{
+    visibility: hidden;
+  }
+
+  .venue-table table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+    
+  }
+
+  .venue-table th, td {
+    padding: 0px;
+    margin-left: 3px;
+    margin-right: 3px;
+    min-width: 100px;
+    text-align: center;
+  }
+
+  /* Header styling */
+  .venue-table thead th {
+    background-color: #DADADA;
+    font-weight: bold;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
