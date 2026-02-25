@@ -1,7 +1,10 @@
 <script>
+	// @fix: conflict-logic - Imported missing supabase client for CSV Insertion
+	import { supabase } from '$lib/supabaseClient.js';
+
 	import Sidebar from './Sidebar.svelte';
 	import apiClient from '$lib/apiClient';
-        import { Toaster, toast } from 'svelte-sonner';
+    import { Toaster, toast } from 'svelte-sonner';
 	import { subject_info, schedules, rooms, storeClasses, obligationClasses, semesters, labSubjects, instructors as instructorsStore } from '$lib/store.js';
 	import DropdownButton from './DropdownButton.svelte';
 	import UploadDropdownButton from './UploadDropdownButton.svelte';
@@ -18,6 +21,8 @@
 	import Classes from './Classes.svelte';
 	import SortAndFilterDropdownButton from './SortAndFilterDropdownButton.svelte';
 
+	// Declared reactive state array to prevent undefined error in UI dropdowns
+	let instructors = $state([]); // @fix: conflict-logic
 
 	//-----------------Fetch Instructor---------------
         async function fetchInitialInstructors() {
@@ -76,6 +81,8 @@
 	
 	// Uploading CSVs is implemented here, hence to save the list of classes in those CSVs, we store them here in a classes array.
 	let uploadedClasses = $state([]);
+	// Initialized missing reactive array used by CSV parser and Data insertion functions to prevent mapping errors
+	let classes = $state([]); // @fix: conflict-logic
 
 	// Shows which schedule and semester is selected to show their corresponding classes and obligations.
 	let selectedSchedule = $state("1")
@@ -97,7 +104,8 @@
 	let searchCourse = $state("")
 
 	// Shows the corresponding demands and analysis per each schedule.
-	let demandDataState = $state({
+	// Renamed from demandDataState to demandData to match the variable name across the HTML template
+	let demandData = $state({	// @fix: conflict-logic
 		"1": { rawDemand: [], analysis: {} },
 		"2": { rawDemand: [], analysis: {} },
 		"3": { rawDemand: [], analysis: {} }
@@ -986,7 +994,8 @@
 	}
 	
 	onMount(async () => {
-		instructors = await getInstructorData();
+		// Replaced getInstructorData() to apiClient.getInstructorData() to prevent initialization crash
+		instructors = await apiClient.getInstructorData(); // @fix: conflict-logic
 		document.addEventListener('click', handleClickOutside);
 		return () => document.removeEventListener('click', handleClickOutside);
 		
