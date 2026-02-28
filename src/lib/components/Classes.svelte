@@ -78,23 +78,50 @@
 		return r;
 	}
 
+	//@fix: conflict-logic properly package together lecs and labs
+	//-----------------------------------------------------
+	// 1. The new Helper Function to package Lec and Lab together
+	function groupClassesBySection(classesList) {
+		const grouped = {};
+		classesList.forEach(cls => {
+			if (!grouped[cls.course]) grouped[cls.course] = {};
+			
+			// Grouping Key: If Lab, use its lec_partner ID. Otherwise, use its own class_id.
+			const key = (cls.type === 'Lab' && cls.lec_partner && cls.lec_partner.trim() !== "") 
+						? cls.lec_partner 
+						: cls.class_id;
+			
+			if (!grouped[cls.course][key]) grouped[cls.course][key] = [];
+			grouped[cls.course][key].push(cls);
+		});
+		
+		// Convert to an array of valid "Packages" per course
+		const options = {};
+		for (const course in grouped) {
+			options[course] = Object.values(grouped[course]);
+		}
+		return options; // Returns { "IT 111": [ [Lec A, Lab A], [Lec B, Lab B] ] }
+	}
+	//-----------------------------------------------------
+
+	//@fix: conflict-logic adjust to updates above
+	//-----------------------------------------------------
+	// 2. The Updated Validator
 	function ifValidBlock(block){
-		for (var i = 0; i < block.length; i++ ){
-			for (var j = i+1; j<block.length; j++){
-				if(timeConflict(block[i], block[j])){
-					console.log("TIME CONFLICT IN BLOCK", (block[i].course + block[i].class_id), (block[j].course + block[j].class_id))
-					return false
-				}
-				else if(block[i].course == block[j].course && block[i].type == "Lec" && block[j].type == "Lab"){
-					if (block[j].lec_partner != block[i].class_id){
-						console.log("Block wrong lab and lec partnership", block[j].lec_partner, block[i].class_id)
-						return false
-					}
+		// The block is now an array of "Packages". We flat() it to get a simple list of classes to check times.
+		const flatBlock = block.flat();
+
+		for (var i = 0; i < flatBlock.length; i++ ){
+			for (var j = i+1; j < flatBlock.length; j++){
+				// We only need to check for time conflicts now, because Lec/Lab are permanently glued together!
+				if(timeConflict(flatBlock[i], flatBlock[j])){
+					return false;
 				}
 			}
 		}
-		return true
+		return true;
 	}
+	//-----------------------------------------------------
 
 	function clearBlocks(obj){
 		for (var i = 0; i<obj.length; i++){
@@ -123,236 +150,105 @@
 		}
 	}
 
+	//@fix: conflict-logic adjust to updates above
+	//-----------------------------------------------------
+	// 3. The Updated Normal Block Generator
 	function generateNormalBlocks() {
-		// group all classes by subject
-		var avail_classes = final_subjects
-		console.log("The avail classes are: ", avail_classes)
-		var block_classes = blocks[semester]
+		selectedType = "Normal";
+		final_blocks = [];
+		missing_classes = [];
 		
-		var fin_blocks = []
-		// for(var k = 0; k< fin_blocks.length; k++){
-		// 	fin_blocks = {}
-		// }
-		console.log("THESE ARE THE FIN BLOCKS:", fin_blocks)
+		// Pre-package the classes BEFORE generating schedules
+		const courseOptions = groupClassesBySection(final_subjects);
+		
+		var block_classes = blocks[semester]; 
+		var fin_blocks = [];
 
-		missing_classes = []
-		console.log(block_classes)
-		var blocks_per_yr = []
+		for (var i = 0; i < block_classes.length; i++){ 
+			var current_block_options = [];
+			var current_missing = [];
 
-		var list_of_blocks = {}
-		for (var member in list_of_blocks) delete list_of_blocks[member];
-		for (var i = 0; i < block_classes.length; i++){
-			list_of_blocks = {}
-			console.log("THE LIST OF BLOCKS ARE: ", list_of_blocks)
-			for (var j = 0; j < block_classes[i].length; j++){
-				if (labSubjects.includes(block_classes[i][j])){
-					list_of_blocks[(block_classes[i][j] + " Lec")] = []
-					list_of_blocks[(block_classes[i][j] + " Lab")] = []
-				}
-				else{
-					list_of_blocks[block_classes[i][j]] = []
-				}
+			for (var j = 0; j < block_classes[i].length; j++){ 
+				const courseName = block_classes[i][j];
 				
-			}
-			blocks_per_yr.push(list_of_blocks)
-			console.log("For this year: ", i)
-			console.log("these are the blocks: ", list_of_blocks)
-		}
-		console.log("These are the classes in the blocks", blocks_per_yr)
-		// class_dict = {}
-		for (i = 0; i < avail_classes.length; i++){
-			var curr_class = avail_classes[i]
-			if (curr_class.year != "-" && obligationClasses[semester].includes(curr_class.course)){
-				console.log("The class being checked rn is: ", curr_class.course + " " + curr_class.class_id)
-				var curr_year = parseInt((curr_class.year.slice(2))) - 1
-				console.log("Its year is: ", curr_year)
-				var current_arr = []
-				if(labSubjects.includes(curr_class.course)){
-					if (curr_class.type == "Lec"){
-						console.log("I am a lec of a subject with labs")
-						current_arr = blocks_per_yr[curr_year][curr_class.course + " Lec"]
-					}
-					else if (curr_class.type == "Lab"){
-						console.log("I am a lab of a subject with labs")
-						current_arr = blocks_per_yr[curr_year][curr_class.course + " Lab"]
-					}
-				}
-				else{
-					console.log("I have no labs")
-					console.log("Curr year is: ", curr_year)
-					console.log("blocks are in this year: ", blocks_per_yr[curr_year])
-					console.log("Curr course is: ", curr_class.course)
-					current_arr = blocks_per_yr[curr_year][curr_class.course]
-				}
-				console.log("The current classes in the subject are: ", current_arr)
-				current_arr.push(curr_class)
-				console.log("test2", current_arr)
-				if(labSubjects.includes(curr_class.course)){
-					if (curr_class.type == "Lec"){
-						blocks_per_yr[curr_year][curr_class.course + " Lec"] = current_arr
-					}
-					else if (curr_class.type == "Lab"){
-						blocks_per_yr[curr_year][curr_class.course + " Lab"] = current_arr
-					}
-				}
-				else{
-					blocks_per_yr[curr_year][curr_class.course] = current_arr
+				// Grab the Packages for this course, instead of separating Lec and Lab
+				if (courseOptions[courseName] && courseOptions[courseName].length > 0) {
+					current_block_options.push(courseOptions[courseName]);
+				} else {
+					current_missing.push(courseName);
+					current_block_options.push([]); 
 				}
 			}
-		}
-		console.log("These are the blocks", blocks_per_yr)
-
-		for (i = 0; i < 4; i++){
-			var arr = []
-			var values = Object.values(blocks_per_yr[i])
-			var keys = Object.keys(blocks_per_yr[i])
-			missing_classes.push((values.map(x => x.length==0 ? keys[values.indexOf(x)] : false)).filter(x => x))
 			
-			console.log("Values", (values.map(x => x.length==0 ? keys[values.indexOf(x)] : false)).filter(x => x))
-			// for(j = 0; j < blocks_per_yr[i].length; j++){
+			missing_classes.push(current_missing);
+
+			if (current_missing.length === 0){
+				// cartesian() now shuffles full Packages, not individual classes
+				let potential_blocks = cartesian(current_block_options);
+				let valid_blocks = potential_blocks.filter(ifValidBlock);
 				
-			// }
-		}
-		console.log("Missing Classes", missing_classes)
-		
-		for (i = 0; i < 4; i++){
-			if (missing_classes[i].length == 0){
-				fin_blocks.push(cartesian(Object.values(blocks_per_yr[i])))
-				console.log("Valid Block: ", cartesian(Object.values(blocks_per_yr[i])))
+				// Flatten the packages back out so the UI table can draw them easily
+				valid_blocks = valid_blocks.map(blk => blk.flat());
+				
+				fin_blocks.push(valid_blocks);
 			}
 			else{
-				fin_blocks.push([])
+				fin_blocks.push([]);
 			}
 		}
 
-		for(i = 0; i<4; i++){
-			fin_blocks[i] = fin_blocks[i].filter(ifValidBlock)
-			console.log("This Block: ", i, "has this: ", fin_blocks[i].filter(ifValidBlock))
-		}
-
-		final_blocks = JSON.parse(JSON.stringify(fin_blocks))
-		fin_blocks = []
-		console.log("Final Blocks: ", fin_blocks)
-
-		for (member in list_of_blocks) delete list_of_blocks[member];
-		blocks_per_yr = null
-		console.log("These are the list_of_blocks: ", list_of_blocks)
-		console.log("These are the blocks_per_yr: ", blocks_per_yr)
-		update = !update
-		
+		final_blocks = fin_blocks;
+		update = !update; // Triggers Svelte UI update
 	}
+	//-----------------------------------------------------
 
+	//@fix: conflict-logic update to adjusts above
+	//-----------------------------------------------------
+	// 4. The Updated Delayed Block Generator
 	function generateDelayedBlocks() {
-		// group all classes by subject
-		var d_avail_classes = final_subjects
-		console.log("The avail classes are: ", d_avail_classes)
-		var d_block_classes = Object.values(delayed_blocks[semester])
+		selectedType = "Delayed";
+		final_blocks = [];
+		missing_classes = [];
 
-		var d_fin_blocks = []
-		console.log("THESE ARE THE D FIN BLOCKS:", d_fin_blocks)
-		missing_classes = []
-		var d_list_of_blocks = {}
-		for (var member in d_list_of_blocks) delete d_list_of_blocks[member];
-		console.log("These are the block classes", d_block_classes)
-		var d_blocks_per_yr = []
-		for (var i = 0; i < d_block_classes.length; i++){
-			d_list_of_blocks = {}
-			for (var j = 0; j < d_block_classes[i].length; j++){
-				if (labSubjects.includes(d_block_classes[i][j])){
-					d_list_of_blocks[(d_block_classes[i][j] + " Lec")] = []
-					d_list_of_blocks[(d_block_classes[i][j] + " Lab")] = []
-				}
-				else{
-					d_list_of_blocks[d_block_classes[i][j]] = []
-				}
-				
-			}
-			d_blocks_per_yr.push(d_list_of_blocks)
-			console.log("For block: ", i)
-			console.log("these are the classes: ", d_list_of_blocks)
-		}
-		console.log("These are the classes in the blocks", d_blocks_per_yr)
-		// class_dict = {}
-		for(j = 0; j < d_block_classes.length; j++){
-			var d_curr_block = d_block_classes[j]
-			for (i = 0; i < d_avail_classes.length; i++){
-				var d_curr_class = d_avail_classes[i]
-				if (d_curr_block.includes(d_curr_class.course)){
-					console.log("The class being checked rn is: ", d_curr_class.course + " " + d_curr_class.class_id)
-					console.log("Its block is: ", j)
-					var d_current_arr = []
-					if(labSubjects.includes(d_curr_class.course)){
-						if (d_curr_class.type == "Lec"){
-							console.log("I am a lec of a subject with labs")
-							d_current_arr = d_blocks_per_yr[j][d_curr_class.course + " Lec"]
-						}
-						else if (d_curr_class.type == "Lab"){
-							console.log("I am a lab of a subject with labs")
-							d_current_arr = d_blocks_per_yr[j][d_curr_class.course + " Lab"]
-						}
-					}
-					else{
-						console.log("I have no labs")
-						console.log("Curr block is: ", j)
-						console.log("classes are in this block: ", d_blocks_per_yr[j])
-						console.log("Curr course is: ", d_curr_class.course)
-						d_current_arr = d_blocks_per_yr[j][d_curr_class.course]
-					}
-					console.log("The current classes in the subject are: ", d_current_arr)
-					d_current_arr.push(d_curr_class)
-					console.log("test2", d_current_arr)
-					if(labSubjects.includes(d_curr_class.course)){
-						if (d_curr_class.type == "Lec"){
-							d_blocks_per_yr[j][d_curr_class.course + " Lec"] = d_current_arr
-						}
-						else if (d_curr_class.type == "Lab"){
-							d_blocks_per_yr[j][d_curr_class.course + " Lab"] = d_current_arr
-						}
-					}
-					else{
-						d_blocks_per_yr[j][d_curr_class.course] = d_current_arr
-					}
-				}
-			}
-		}
-		console.log("These are the blocks", d_blocks_per_yr)
-
-		for (i = 0; i < d_block_classes.length; i++){
-			var arr = []
-			var values = Object.values(d_blocks_per_yr[i])
-			var keys = Object.keys(d_blocks_per_yr[i])
-			missing_classes.push((values.map(x => x.length==0 ? keys[values.indexOf(x)] : false)).filter(x => x))
-			
-			console.log("Values", (values.map(x => x.length==0 ? keys[values.indexOf(x)] : false)).filter(x => x))
-			// for(j = 0; j < blocks_per_yr[i].length; j++){
-				
-			// }
-		}
-		console.log("Missing Classes", missing_classes)
+		// Pre-package the classes
+		const courseOptions = groupClassesBySection(final_subjects);
 		
-		for (i = 0; i < d_block_classes.length; i++){
-			if (missing_classes[i].length == 0){
-				d_fin_blocks.push(cartesian(Object.values(d_blocks_per_yr[i])))
-				console.log("Valid Block: ", cartesian(Object.values(d_blocks_per_yr[i])))
+		var d_block_classes = Object.values(delayed_blocks[semester]);
+		var d_fin_blocks = [];
+
+		for (var i = 0; i < d_block_classes.length; i++){
+			var current_block_options = [];
+			var current_missing = [];
+
+			for (var j = 0; j < d_block_classes[i].length; j++){
+				const courseName = d_block_classes[i][j];
+				
+				if (courseOptions[courseName] && courseOptions[courseName].length > 0) {
+					current_block_options.push(courseOptions[courseName]);
+				} else {
+					current_missing.push(courseName);
+					current_block_options.push([]);
+				}
+			}
+			
+			missing_classes.push(current_missing);
+
+			if (current_missing.length === 0){
+				let potential_blocks = cartesian(current_block_options);
+				let valid_blocks = potential_blocks.filter(ifValidBlock);
+				
+				valid_blocks = valid_blocks.map(blk => blk.flat());
+				d_fin_blocks.push(valid_blocks);
 			}
 			else{
-				d_fin_blocks.push([])
+				d_fin_blocks.push([]);
 			}
 		}
 
-		for(i = 0; i<d_block_classes.length; i++){
-			d_fin_blocks[i] = d_fin_blocks[i].filter(ifValidBlock)
-			console.log("This Block: ", i, "has this: ", d_fin_blocks[i].filter(ifValidBlock))
-		}
-
-		final_blocks = JSON.parse(JSON.stringify(d_fin_blocks))
-
-		console.log("Final Blocks: ", final_blocks)
-		d_fin_blocks = []
-		for (member in d_list_of_blocks) delete d_list_of_blocks[member];
-		d_blocks_per_yr = null
-		update = !update
+		final_blocks = d_fin_blocks;
+		update = !update;
 	}
+	//-----------------------------------------------------
 
 	function needsMoreSections(course) {
 		const courseData = (demandData.find(d => d.course == course.course));
