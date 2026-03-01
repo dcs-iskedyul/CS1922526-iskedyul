@@ -83,8 +83,13 @@
 	// 1. The new Helper Function to package Lec and Lab together
 	function groupClassesBySection(classesList) {
 		const grouped = {};
+		const courseTypes = {};
+
 		classesList.forEach(cls => {
 			if (!grouped[cls.course]) grouped[cls.course] = {};
+			if (!courseTypes[cls.course]) courseTypes[cls.course] = new Set();
+			
+			courseTypes[cls.course].add(cls.type);
 			
 			// Grouping Key: If Lab, use its lec_partner ID. Otherwise, use its own class_id.
 			const key = (cls.type === 'Lab' && cls.lec_partner && cls.lec_partner.trim() !== "") 
@@ -98,7 +103,31 @@
 		// Convert to an array of valid "Packages" per course
 		const options = {};
 		for (const course in grouped) {
-			options[course] = Object.values(grouped[course]);
+			options[course] = [];
+			for (const key in grouped[course]) {
+				const group = grouped[course][key];
+				const lecs = group.filter(c => c.type === 'Lec');
+				const labs = group.filter(c => c.type === 'Lab');
+				const others = group.filter(c => c.type !== 'Lec' && c.type !== 'Lab');
+
+				if (lecs.length > 0 && labs.length > 0) {
+					lecs.forEach(l => {
+						labs.forEach(b => {
+							options[course].push([l, b, ...others]);
+						});
+					});
+				} else {
+					options[course].push(group);
+				}
+			}
+
+			if (courseTypes[course].has('Lec') && courseTypes[course].has('Lab')) {
+				options[course] = options[course].filter(pkg => {
+					const hasLec = pkg.some(c => c.type === 'Lec');
+					const hasLab = pkg.some(c => c.type === 'Lab');
+					return hasLec && hasLab;
+				});
+			}
 		}
 		return options; // Returns { "IT 111": [ [Lec A, Lab A], [Lec B, Lab B] ] }
 	}
@@ -357,10 +386,9 @@
 		conflicts = parseForConflicts(data);
 		storeClasses.set(data);
 		console.log("CLASSES: ", data);
+		final_subjects = [];
 		for (var j = 0; j < data.length; j++) {
-			if (!checkConflict(data[j])) {
-				final_subjects.push(data[j]);
-			}
+			final_subjects.push(data[j]);
 		}
 		lab_warnings = []
 		same_time_warnings = []
@@ -478,7 +506,7 @@
 			'S': 'Sat'
 		};
 		
-		return dayStr.match(/(M|T|W|Th|F|S)/g)?.map(d => dayMap[d]).join(',') || '';
+		return dayStr.match(/(Th|M|T|W|F|S)/g)?.map(d => dayMap[d]).join(',') || ''; // @fix: to avoid confusion between T and Th, Th is matched first
 	}
 
 	function convertTo24Hour(timeStr) {

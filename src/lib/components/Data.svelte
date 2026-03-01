@@ -552,6 +552,7 @@
 			header: true,
 			delimiter: ',',
 			skipEmptyLines: true,
+			transformHeader: h => h.trim(), // remove any leading/trailing whitespace from headers
 			complete: async function(results) {
 			console.log("Parsing Faculty Loading format", results.data);
 			
@@ -580,8 +581,13 @@
 
 				let lec_partner = null
 
+				const lecPartnerKey = Object.keys(row).find(k => k.toLowerCase() === 'lec_partner'); // @fix: conflict-logic
+
 				if(type == "Lab"){
-					if(row.Section.includes("/")){ //like WFT/TBD
+					if (lecPartnerKey && row[lecPartnerKey] && row[lecPartnerKey].trim() !== "") { // @fix: conflict-logic - check if lec_partner column exists and has a value
+						lec_partner = row[lecPartnerKey].trim();
+					}
+					else if(row.Section.includes("/")){ //like WFT/TBD
 						lec_partner = row.Section.split('/')[0]
 					}
 					else if (row.Section.includes(" ")){ //like HONOR 1
@@ -615,9 +621,18 @@
 				for(var i = 0; i < transformedData.length; i++){
 					if (transformedData[i].lec_partner == " "){ //lab with no lec partner
 						console.log("This lab class has no lec partner: ", transformedData[i])
-						transformedData[i].lec_partner = (transformedData.find(
-							(value, index) =>
-							isLecPartner(transformedData[i], value))).section
+						
+						const candidates = transformedData.filter(value => isLecPartner(transformedData[i], value)); // find all the classes that can be the lec partner of this lab
+
+						if (candidates.length > 0) {
+							// Sort candidates by how many labs they already have assigned
+							candidates.sort((a, b) => {
+								const countA = transformedData.filter(t => t.lec_partner === a.section).length;
+								const countB = transformedData.filter(t => t.lec_partner === b.section).length;
+								return countA - countB;
+							});
+							transformedData[i].lec_partner = candidates[0].section;
+						}
 					}
 				}
 			}
