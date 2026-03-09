@@ -966,28 +966,64 @@
 		}
 	}
 	
+	// @fix: conflict-logic
+	// Secures loophole on table editing feature
 	async function saveEdit(clas, column, value) {
-
-		//if (!editingCell) return;
 		console.log("saveEdit called");
 		
-		try {
-		const { error } = await supabase
-			.from('classes')
-			.update({ [column]: value })
-			.eq('id', clas.id);
-			
-		if (error) throw error;
-		console.log("Successfully updated");
-		// Only trigger re-render after successful save
-		//updateEdit++;
-		update = !update
-		} catch (error) {
-		console.error('Error updating:', error);
+		// Creating the temporary class
+		const proposedClass = { ...clas, [column]: value };
+
+		// Gets the old schedule, but removes the current class being edited to prevent self-conflict
+		const otherClasses = (classesValue || []).filter(c => c.id !== clas.id);
+
+		// Check for conflicts
+		const conflictCheck = checkConflict(proposedClass, otherClasses);
+
+		if (conflictCheck.hasConflict) {
+			acts.add({ mode: 'danger', message: `⚠ Update blocked: ${conflictCheck.reason}` });
+			editingCell = null;
+			update = !update;
+			return;
 		}
 		
+		// Proceed to update if it's safe
+		try {
+			const { error } = await supabase
+				.from('classes')
+				.update({ [column]: value })
+				.eq('id', clas.id);
+			
+			if (error) throw error;
+			console.log("Successfully updated");
+		} catch (error) {
+			console.error('Error updating:', error);
+		}
+
 		editingCell = null;
-		update = !update
+		update = !update;
+
+		// OLD SAVE EDIT FUNCTION
+		// //if (!editingCell) return;
+		// console.log("saveEdit called");
+		
+		// try {
+		// const { error } = await supabase
+		// 	.from('classes')
+		// 	.update({ [column]: value })
+		// 	.eq('id', clas.id);
+			
+		// if (error) throw error;
+		// console.log("Successfully updated");
+		// // Only trigger re-render after successful save
+		// //updateEdit++;
+		// update = !update
+		// } catch (error) {
+		// console.error('Error updating:', error);
+		// }
+		
+		// editingCell = null;
+		// update = !update
 	}
 	
 	// Click outside to cancel edit
@@ -1071,6 +1107,45 @@
 			deleteClassFinal();
 			clickOutDeleteModal();
 		}
+		
+
+		// @fix: conflict-logic
+		// Helper function to convert HH:MM string to integer for math comparisons
+		function timeToMinutes(timeStr) {
+			if (!timeStr) return 0;
+			const [hours, minutes] = timeStr.split(':').map(Number);
+			return (hours * 60) + minutes;
+		}
+
+		// @fix: conflict-logic
+		// Validation function to prevent overlaps
+		function checkConflict(newClass, existingClasses) {
+			const newDays = newClass.days.split(',');
+			const newStart = timeToMinutes(newClass.start_time);
+			const newEnd = timeToMinutes(newClass.end_time);
+
+			for (const existing of existingClasses) {
+				if (existing.schedule !== newClass.schedule) continue;
+				
+				const existingDays = existing.days ? existing.days.split(','): [];
+				const sharesDay = newDays.some(day => existingDays.includes(day));
+
+				if (sharesDay) {
+					const existingStart = timeToMinutes(existing.start_time);
+					const existingEnd = timeToMinutes(existing.end_time);
+
+					if ((newStart < existingEnd) && (newEnd > existingStart)) {
+						if (newClass.location === existing.location) {
+							return { hasConflict: true, reason: `Room conflict: ${existing.location} is already booked for ${existing.course}.`};
+						}
+						if (newClass.instructor === existing.instructor && newClass.instructor !== "TBA") {
+							return { hasConflict: true, reason: `Instructor conflict: ${existing.instructor} is already teaching ${existing.course}.`};
+						}
+					}
+				}
+			}
+			return { hasConflict: false };
+		}
 
 		async function sendData() {
 			console.log("IM INSERTING")
@@ -1083,11 +1158,10 @@
 			var year_level = '-';
 			var teaching_load = 0;
 			if(subject_info[newCourse]){
-				///set year level of class
+				// set year level of class
 				year_level = subject_info[newCourse]["year"];
 
-
-				///set teaching load
+				// set teaching load
 				if(newType == "Lec"){
 					teaching_load = subject_info[newCourse]["lecTL"];
 				} else {
@@ -1095,36 +1169,46 @@
 						teaching_load = subject_info[newCourse]["labTL"];
 					}
 				}
+				// set units
+			}
+			
+			// @fix:conflict-logic
+			// Package new class data
+			const newClassData = {
+				course: newCourse,
+				type: newType,
+				class_id: newClass,
+				instructor: newInstr,
+				start_time: newStart,
+				end_time: newEnd,
+				location: newLoc,
+				days: newDays,
+				schedule: newSched,
+				year: year_level,
+				lec_partner: newLecPartner
+			};
 
-				///set units
+			// @fix:conflict-logic
+			// Run Conflict Check
+			const conflictCheck = checkConflict(newClassData, classesValue || []);
+			if (conflictCheck.hasConflict) {
+				acts.add({mode: 'danger', message: `⚠ ${conflictCheck.reason}`});
+				submit = false;
+				update = false;
+				return null; // Stop insertion
 			}
 
-			const { data, error } = await supabase.from('classes').insert([
-				{
-					course: newCourse,
-					type: newType,
-					class_id: newClass,
-					instructor: newInstr,
-					start_time: newStart,
-					end_time: newEnd,
-					location: newLoc,
-					days: newDays,
-					schedule: newSched,
-					year: year_level,
-					lec_partner: newLecPartner
-				}
-			]);
+			const { data, error } = await supabase.from('classes').insert([newClassData]);
 			if (error) throw new Error(error.message);
+
 			newDays = '';
 			console.log(newDays);
 			submit = false;
 			update = false;
-			
 			currentAnalysis = []
 			demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
 
 			// hasUploadedDemandFile[selectedSchedule] = false
-
 			recomputeDemandAnalysis()
 			return data;
 

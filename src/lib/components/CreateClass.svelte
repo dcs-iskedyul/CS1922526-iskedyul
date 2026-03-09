@@ -244,7 +244,7 @@
                     </div>
                 </div>
             </div>
-            <input class="submit-btn" type="submit" value="Submit" on:click={sendNewData} />
+            <input class="submit-btn" type="submit" value="Submit" onclick={sendNewData} />
              </form>
     </div>
 </div>
