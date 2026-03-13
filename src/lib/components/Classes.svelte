@@ -11,7 +11,7 @@
 	///for the edit class stuff
 	import { onMount } from 'svelte';
 
-	let instructorsClasses = [];
+	let instructorsClasses = $state([]);
 	onMount(async () => {
 		instructorsClasses = await getInstructorData();
 		
@@ -78,9 +78,9 @@
 		return r;
 	}
 
-	//@fix: conflict-logic properly package together lecs and labs
+	// @fix: conflict-logic properly package together lecs and labs
 	//-----------------------------------------------------
-	// 1. The new Helper Function to package Lec and Lab together
+	// new helper function to package Lecs and Labs together
 	function groupClassesBySection(classesList) {
 		const grouped = {};
 		const courseTypes = {};
@@ -100,7 +100,7 @@
 			grouped[cls.course][key].push(cls);
 		});
 		
-		// Convert to an array of valid "Packages" per course
+		// Convert to an array of valid PACKAGES per course
 		const options = {};
 		for (const course in grouped) {
 			options[course] = [];
@@ -129,20 +129,20 @@
 				});
 			}
 		}
-		return options; // Returns { "IT 111": [ [Lec A, Lab A], [Lec B, Lab B] ] }
+		return options; // return format{ "CS 10": [ [Lec A, Lab A], [Lec B, Lab B] ] }
 	}
 	//-----------------------------------------------------
 
-	//@fix: conflict-logic adjust to updates above
+	// @fix: conflict-logic adjust to updates above
 	//-----------------------------------------------------
-	// 2. The Updated Validator
+	// update
 	function ifValidBlock(block){
-		// The block is now an array of "Packages". We flat() it to get a simple list of classes to check times.
+		// The block is now an array of PACKAGES. Use flat() to get a simple list of classes to check times.
 		const flatBlock = block.flat();
 
 		for (var i = 0; i < flatBlock.length; i++ ){
 			for (var j = i+1; j < flatBlock.length; j++){
-				// We only need to check for time conflicts now, because Lec/Lab are permanently glued together!
+				// only need to check for time conflicts now
 				if(timeConflict(flatBlock[i], flatBlock[j])){
 					return false;
 				}
@@ -179,9 +179,9 @@
 		}
 	}
 
-	//@fix: conflict-logic adjust to updates above
+	// @fix: conflict-logic adjust to updates above
 	//-----------------------------------------------------
-	// 3. The Updated Normal Block Generator
+	// update
 	function generateNormalBlocks() {
 		selectedType = "Normal";
 		final_blocks = [];
@@ -231,9 +231,9 @@
 	}
 	//-----------------------------------------------------
 
-	//@fix: conflict-logic update to adjusts above
+	// @fix: conflict-logic update to adjusts above
 	//-----------------------------------------------------
-	// 4. The Updated Delayed Block Generator
+	// update
 	function generateDelayedBlocks() {
 		selectedType = "Delayed";
 		final_blocks = [];
