@@ -214,25 +214,29 @@ export function parseForConflicts(data) {
             types_of_conflict = [];
             
             //@fix: conflict-logic DONT SKIP TIME CONFLICT, WHEN COMPARING LEC/LAB PAIR, ONLY CHECK TIME CONFLICT
-            // ----- ADD THIS NEW BLOCK HERE -----
-            // 1. First, check if these two classes are a Lec/Lab pair
+            // -----------------
+            //objects dont always have section part, sometimes have id
+            const class1Id = clas.section || clas.class_id;
+            const class2Id = n_clas.section || n_clas.class_id;
+
+            // check if two classes are a Lec/Lab pair
             let isLecLabPair = false;
             if (clas.course === n_clas.course) {
-                if (clas.section === n_clas.section || 
-                    clas.section === n_clas.lec_partner || 
-                    n_clas.section === clas.lec_partner) {
+                if (class1Id === class2Id || 
+                    class1Id === n_clas.lec_partner || 
+                    class2Id === clas.lec_partner) {
                     isLecLabPair = true;
                 }
             }
 
-            // 2. Apply the rules based on whether they are a pair or not
+            // 
             if (isLecLabPair) {
-                // If they ARE a pair, we only care if they overlap in time for the student.
-                // We intentionally bypass the Instructor and Room checks!
+                // If PAIR, only care if they overlap in time 
+                //  SKIP the Instructor and Room checks
                 types_of_conflict.push("Time Conflict");
             } 
             else {
-                // If they are NOT a pair (e.g., CS 11 and Math 101), check for shared resources
+                // If NOT pair, check Intructor and Room
                 if (n_loc == loc && loc !== 'TBA' && n_loc !== 'TBA') {
                     types_of_conflict.push("Room Conflict");
                 }
@@ -249,8 +253,8 @@ export function parseForConflicts(data) {
                     continue;
                 }
                 
-                const class1Id = clas.section || clas.class_id;
-                const class2Id = n_clas.section || n_clas.class_id;
+                // const class1Id = clas.section || clas.class_id;
+                // const class2Id = n_clas.section || n_clas.class_id;
                 
                 if(timeConflict(clas, n_clas)){
                     conflicts.push([
