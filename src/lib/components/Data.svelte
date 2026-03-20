@@ -5,7 +5,9 @@
 	import Sidebar from './Sidebar.svelte';
 	import apiClient from '$lib/apiClient';
     import { Toaster, toast } from 'svelte-sonner';
-	import { subject_info, schedules, rooms, storeClasses, obligationClasses, semesters, labSubjects, instructors as instructorsStore } from '$lib/store.js';
+
+	// @: Archive Module - Imported academicYears for filtering by academic year
+	import { subject_info, schedules, rooms, storeClasses, obligationClasses, semesters, labSubjects, instructors as instructorsStore, academicYears } from '$lib/store.js';
 	import DropdownButton from './DropdownButton.svelte';
 	import UploadDropdownButton from './UploadDropdownButton.svelte';
 	import { clickOutside } from "svelte-outside";
@@ -20,6 +22,8 @@
 	import Papa from 'papaparse';
 	import Classes from './Classes.svelte';
 	import SortAndFilterDropdownButton from './SortAndFilterDropdownButton.svelte';
+
+	let selectedAcademicYear = $state("2024-2025"); // @: Archive Module - State Variable for Academic Year
 
 	// Declared reactive state array to prevent undefined error in UI dropdowns
 	let instructors = $state([]); // @fix: conflict-logic
@@ -245,7 +249,8 @@
 				days: cls.days,
 				schedule: selectedSchedule,
 				year: subject_info[cls.course]? subject_info[cls.course]["year"] : "-",
-				lec_partner: cls.lec_partner
+				lec_partner: cls.lec_partner,
+				academic_year: selectedAcademicYear
 			}));
 			
 			const { data, error } = await supabase
@@ -486,7 +491,8 @@
 		const {error} = await supabase
 			.from('demand')
 			.delete()
-			.eq("schedule", selectedSchedule);
+			.eq("schedule", selectedSchedule)
+			.eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter demand by selected academic year
 		
 		update = !update
 		currentAnalysis = []
@@ -815,7 +821,8 @@
 		const { data: currentDemand, error } = await supabase
 			.from('demand')
 			.select('*')
-			.eq('schedule', selectedSchedule);
+			.eq('schedule', selectedSchedule)
+			.eq('academic_year', selectedAcademicYear); // @: Archive Module - Filter demand by selected academic year
 
 
 		if (error) {
@@ -837,7 +844,8 @@
 		var { data: currentClasses, error2 } = await supabase
 			.from('classes')
 			.select('*')
-			.eq('schedule', selectedSchedule);
+			.eq('schedule', selectedSchedule)
+			.eq('academic_year', selectedAcademicYear); // @: Archive Module - Filter classes by selected academic year
 
 		if (error2) {
 			// console.error('Error fetching classes:', error2);
@@ -907,7 +915,8 @@
 		await supabase
 			.from('demand')
 			.delete()
-			.eq("schedule", selectedSchedule);
+			.eq("schedule", selectedSchedule)
+			.eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter demand by selected academic year
 
 		
 
@@ -916,7 +925,8 @@
 				{
 					course: parsedDemand[i].course,
 					demand: parsedDemand[i].demand,
-					schedule: selectedSchedule
+					schedule: selectedSchedule,
+					academic_year: selectedAcademicYear // @: Archive Module - Save demand with selected academic year
 				}])
 		}
 
@@ -1185,7 +1195,8 @@
 				days: newDays,
 				schedule: newSched,
 				year: year_level,
-				lec_partner: newLecPartner
+				lec_partner: newLecPartner,
+				academic_year: selectedAcademicYear
 			};
 
 			// @fix:conflict-logic
@@ -1316,6 +1327,18 @@
 		<div class="flex justify-between items-center mb-6">
 			<div class ="flex flex-row gap-10">
 				<h1 class="text-3xl font-bold text-gray-800">Class Schedule</h1>
+				
+				<!-- @: Archive Module - Added AcademicYear -->
+				<select
+					bind:value={selectedAcademicYear}
+					onchange={() => update = !update}
+					class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+				>
+					{#each academicYears as year}
+						<option value={year}> AY{year}</option>
+					{/each}
+				</select>
+
 				<!-- Semesters -->
 				<div class = "flex gap-4">
 					{#each semesters as sem}
@@ -1598,6 +1621,7 @@
 					demandData={demandData[selectedSchedule]?.rawDemand} 
 					sectionAnalysis={demandData[selectedSchedule]?.analysis}
 					semester = {selectedSemester}
+					academicYear={selectedAcademicYear}
 					onToggleDeleteModal= {toggleDeleteModal}
 					searchCourse, searchSection = {handleSearch()}
 				/>

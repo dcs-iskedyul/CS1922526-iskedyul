@@ -28,7 +28,8 @@
 
 	let update = $state(false)
 
-	let { onToggleDeleteModal, schedule, demandData = [], sectionAnalysis = {}, sortCategory = "", filterCategories = [], semester, searchCourse="", searchSection="" } = $props();
+	// @: Archive Module - Added academicYear
+	let { onToggleDeleteModal, schedule, demandData = [], sectionAnalysis = {}, sortCategory = "", filterCategories = [], semester, searchCourse="", searchSection="", academicYear } = $props();
 
 	let final_subjects = $state([])
 
@@ -370,11 +371,12 @@
 		// 	.order(finalSort, { ascending: true });
 		// }
 		// else{
-			const { data, error } = 
+		const { data, error } = 
 			await supabase
 			.from('classes')
 			.select()
 			.eq("schedule", schedule)
+			.eq("academic_year", academicYear) // @: Archive Module - Filter by academicYear
 			.in("year", filterCategories)
 			.order(finalSort, { ascending: true });
 		// }

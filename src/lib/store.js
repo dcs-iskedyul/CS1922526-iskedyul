@@ -1,5 +1,16 @@
 import { writable } from 'svelte/store';
 
+// @: Archive Module
+export const academicYears = [
+    "2020-2021",
+    "2021-2022",
+    "2022-2023",
+    "2023-2024",
+    "2024-2025",
+    "2025-2026",
+    "2026-2027",
+];
+
 export const rooms = [
     { name: "TBA", capacity: 0},
     { name: "AECH Accenture Rm", capacity: 90 },
@@ -23,7 +34,7 @@ export const rooms = [
 //for now, each subject has the properties:
 // year: UG1, UG2, UG3, UG4, G
 // semester: 1, 2, 3 = midyear
-//kulang: 197
+// kulang: 197
 export const subject_info = {
     "CS 11": {"year": "UG1", "semester": 1, "units": 3, "lecTL":2, "labTL":1.5},
     "CS 30": {"year": "UG1", "semester": 1, "units": 3, "lecTL":3},
