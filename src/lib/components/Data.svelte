@@ -331,7 +331,7 @@
 
 		currentAnalysis = []
 		// demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
-		// recomputeDemandAnalysis()
+		recomputeDemandAnalysis()
 		// hasUploadedDemandFile[] = false
 		if (hasUploadedFile) {
 			const fileInput = document.getElementById('fileInput');
@@ -345,6 +345,9 @@
 	function handleSemesterChange(sem){
 		selectedSemester = sem;
 		obligations = obligationClasses[selectedSemester]
+
+		recomputeDemandAnalysis();
+
 		update = !update
 	}
 
@@ -492,16 +495,19 @@
 			.from('demand')
 			.delete()
 			.eq("schedule", selectedSchedule)
+			.eq("semester", selectedSemester)	// @: Archive Module - Filter demand by selected semester
 			.eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter demand by selected academic year
 		
-		update = !update
-		currentAnalysis = []
+		// update = !update
+		// currentAnalysis = []
 		demandData[selectedSchedule]={ rawDemand: [], analysis: {} }
-		console.log("Current Anaalysis before recompute: ", currentAnalysis)
+		console.log("Current Analysis before recompute: ", currentAnalysis)
 
+		currentAnalysis = []
 		recomputeDemandAnalysis()
+		update = !update
 
-		console.log("Current Anaalysis after recompute: ", currentAnalysis)
+		console.log("Current Analysis after recompute: ", currentAnalysis)
 	}
 
 	function getVenueCapacity(roomName) {
@@ -822,6 +828,7 @@
 			.from('demand')
 			.select('*')
 			.eq('schedule', selectedSchedule)
+			.eq('semester', selectedSemester)	// @: Archive Module - Filter demand by selected semester
 			.eq('academic_year', selectedAcademicYear); // @: Archive Module - Filter demand by selected academic year
 
 
@@ -845,6 +852,7 @@
 			.from('classes')
 			.select('*')
 			.eq('schedule', selectedSchedule)
+			.eq('semester', selectedSemester)	// @: Archive Module - Filter classes by selected semester
 			.eq('academic_year', selectedAcademicYear); // @: Archive Module - Filter classes by selected academic year
 
 		if (error2) {
@@ -916,9 +924,8 @@
 			.from('demand')
 			.delete()
 			.eq("schedule", selectedSchedule)
+			.eq("semester", selectedSemester)	// @: Archive Module - Filter demand by selected semester
 			.eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter demand by selected academic year
-
-		
 
 		for(var i = 0; i < parsedDemand.length; i++){
 			await supabase.from('demand').insert([
@@ -926,18 +933,21 @@
 					course: parsedDemand[i].course,
 					demand: parsedDemand[i].demand,
 					schedule: selectedSchedule,
+					semester: selectedSemester, // @: Archive Module - Save demand with selected semester
 					academic_year: selectedAcademicYear // @: Archive Module - Save demand with selected academic year
 				}])
 		}
 
+		hasUploadedDemandFile[selectedSchedule] = true
+
 		demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
 		currentAnalysis = []
 
-		hasUploadedDemandFile[selectedSchedule] = false
+		// hasUploadedDemandFile[selectedSchedule] = false
 		await recomputeDemandAnalysis();
 		
 		update = !update;
-		hasUploadedDemandFile[selectedSchedule] = false;
+		// hasUploadedDemandFile[selectedSchedule] = false;
 	}
 
 	// async function getDemand() {
