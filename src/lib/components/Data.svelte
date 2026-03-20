@@ -145,7 +145,9 @@
         let { data, error } = await supabase
             .from('classes')
             .select('id, course, class_id, instructor, start_time, end_time, location, days, type')
-			.eq("schedule", selectedSchedule);
+			.eq("schedule", selectedSchedule)
+			.eq("semester", selectedSemester)
+			.eq("academic_year", selectedAcademicYear); // @: Archive Module: Filter schedules by selected semester and academic year
 
         if (error) {
             console.error('Error fetching data:', error);
@@ -250,7 +252,8 @@
 				schedule: selectedSchedule,
 				year: subject_info[cls.course]? subject_info[cls.course]["year"] : "-",
 				lec_partner: cls.lec_partner,
-				academic_year: selectedAcademicYear
+				academic_year: selectedAcademicYear,
+				semester: selectedSemester // @: Archive Module: Insert schedule with selected semester and academic year
 			}));
 			
 			const { data, error } = await supabase
@@ -281,7 +284,9 @@
 			const { error: deleteError } = await supabase
 			.from('classes')
 			.delete()
-			.eq("schedule", selectedSchedule);
+			.eq("schedule", selectedSchedule)
+			.eq("semester", selectedSemester)
+			.eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter classes by selected semester and academic year
 			
 			if (deleteError) {
 				console.error("Error deleting existing data:", deleteError);
@@ -301,7 +306,9 @@
 				days: cls.days,
 				schedule: selectedSchedule,
 				year: subject_info[cls.course]? subject_info[cls.course]["year"] : "-",
-				lec_partner : cls.lec_partner
+				lec_partner : cls.lec_partner,
+				academic_year: selectedAcademicYear,
+				semester: selectedSemester
 			}));
 			
 			const { data, error } = await supabase
@@ -1217,7 +1224,8 @@
 				schedule: newSched,
 				year: year_level,
 				lec_partner: newLecPartner,
-				academic_year: selectedAcademicYear
+				academic_year: selectedAcademicYear,
+				semester: selectedSemester // @: Archive Module - Save class with selected semester
 			};
 
 			// @fix:conflict-logic

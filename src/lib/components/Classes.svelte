@@ -314,7 +314,10 @@
         // Step 1: Fetch data from Supabase
         let { data, error } = await supabase
             .from('classes')
-            .select('id, course, section, type, instructor, start_time, end_time, room, days, load');
+            .select('id, course, section, type, instructor, start_time, end_time, room, days, load')
+            .eq('schedule', schedule)
+            .eq('semester', semester)
+            .eq('academic_year', academicYear); // @: Archive Module - Filter by academicYear
 
         if (error) {
             console.error('Error fetching data:', error);
@@ -376,6 +379,7 @@
 			.from('classes')
 			.select()
 			.eq("schedule", schedule)
+			.eq("semester", semester)
 			.eq("academic_year", academicYear) // @: Archive Module - Filter by academicYear
 			.in("year", filterCategories)
 			.order(finalSort, { ascending: true });
@@ -484,7 +488,10 @@
 							room: locationMatch ? locationMatch[0] : '', // Updated from location to room
 							days: timeMatch ? parseDays(timeMatch[1]) : '',
 							type: '', // New field for type
-							load: '' // New field for load
+							load: '', // New field for load
+							schedule: schedule,
+							academic_year: academicYear,
+							semester: semester // @: Archive Module - Add semester and academic year
 						};
 					})
 					.filter(item => item !== null);
