@@ -326,6 +326,18 @@
 		}
 	}
 
+	// @: Archive Module - Added Academic Year Change Handler
+	function handleAcademicYearChange(event) {
+		selectedAcademicYear = event.target.value;
+
+		currentAnalysis = [];
+		demandData[selectedSchedule] = {rawDemand: [], analysis: {}};
+		hasUploadedDemandFile[selectedSchedule] = false;
+
+		recomputeDemandAnalysis();
+		update = !update;
+	}
+
 	function handleScheduleChange(schedule) {
 		selectedSchedule = schedule;
 
@@ -339,16 +351,19 @@
 				parseCSV(fileInput.files[0], schedule);
 			}
 		}
-		update = !update
+		update = !update;
 	}
 
 	function handleSemesterChange(sem){
 		selectedSemester = sem;
-		obligations = obligationClasses[selectedSemester]
+		obligations = obligationClasses[selectedSemester];
+
+		currentAnalysis = [];
+		demandData[selectedSchedule] = {rawDemand: [], analysis: {}};
+		hasUploadedDemandFile[selectedSchedule] = false;
 
 		recomputeDemandAnalysis();
-
-		update = !update
+		update = !update;
 	}
 
 	// const toggleModal = () => {
@@ -498,14 +513,12 @@
 			.eq("semester", selectedSemester)	// @: Archive Module - Filter demand by selected semester
 			.eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter demand by selected academic year
 		
-		// update = !update
-		// currentAnalysis = []
+		update = !update
+		currentAnalysis = []
 		demandData[selectedSchedule]={ rawDemand: [], analysis: {} }
 		console.log("Current Analysis before recompute: ", currentAnalysis)
 
-		currentAnalysis = []
 		recomputeDemandAnalysis()
-		update = !update
 
 		console.log("Current Analysis after recompute: ", currentAnalysis)
 	}
@@ -938,16 +951,14 @@
 				}])
 		}
 
-		hasUploadedDemandFile[selectedSchedule] = true
-
 		demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
 		currentAnalysis = []
 
-		// hasUploadedDemandFile[selectedSchedule] = false
+		hasUploadedDemandFile[selectedSchedule] = false
 		await recomputeDemandAnalysis();
 		
 		update = !update;
-		// hasUploadedDemandFile[selectedSchedule] = false;
+		hasUploadedDemandFile[selectedSchedule] = false;
 	}
 
 	// async function getDemand() {
@@ -1340,8 +1351,8 @@
 				
 				<!-- @: Archive Module - Added AcademicYear -->
 				<select
-					bind:value={selectedAcademicYear}
-					onchange={() => update = !update}
+					value={selectedAcademicYear}
+					onchange={handleAcademicYearChange}
 					class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500"
 				>
 					{#each academicYears as year}
