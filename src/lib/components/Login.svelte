@@ -1,5 +1,6 @@
 <script>
   import { supabase } from "$lib/supabaseClient";
+	import { preventDefault } from "svelte/legacy";
   import SectionWrapper from "./SectionWrapper.svelte";
   import { Toaster, toast } from 'svelte-sonner';
 
@@ -50,21 +51,36 @@
             </div>
         </div>
       </header>
+
       <div class = "flex h-screen justify-center items-center flex-col space-y-2 flex-1 mx-60">
-        <div class = "flex flex-col w-2/6">
+        <form 
+          class = "flex flex-col w-2/6"
+          onsubmit={ (e) => { e.preventDefault(); authenticateSupabase(); }}
+        >
             <label for="username" class="italic block mb-2 text-sm font-medium text-gray-900 text-left">Username</label>
             <input 
-            bind:value={username}
-            
-            type="text" id="username" class="bg-gray-100 border border-gray-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" required />
+              bind:value={username}
+              type="text" 
+              id="username" 
+              class="bg-gray-100 border border-gray-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" 
+              required 
+            />
+
             <label for="password" class="italic block mb-2 text-sm font-medium text-gray-900 text-left mt-3">Password</label>
             <input 
-            bind:value={password}
-            type="password" id="password" class="bg-gray-100 border border-gray-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" required />
+              bind:value={password}
+              type="password" 
+              id="password" 
+              class="bg-gray-100 border border-gray-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" 
+              required 
+            />
             
-              <button onclick={authenticateSupabase}
-              type="submit" class="mt-4 text-white bg-green-700 hover:bg-green-900 focus:ring-4 focus:outline-none focus:ring-green-100 font-medium rounded-lg text-sm w-full px-5 py-2.5 text-center">Login</button>
-            
-        </div>
+            <button
+              type="submit" 
+              class="mt-4 text-white bg-green-700 hover:bg-green-900 focus:ring-4 focus:outline-none focus:ring-green-100 font-medium rounded-lg text-sm w-full px-5 py-2.5 text-center"
+            >
+              Login
+            </button>
+          </form>
       </div>
 </SectionWrapper>
