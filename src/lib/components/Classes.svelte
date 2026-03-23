@@ -382,7 +382,8 @@
 			.eq("semester", semester)
 			.eq("academic_year", academicYear) // @: Archive Module - Filter by academicYear
 			.in("year", filterCategories)
-			.order(finalSort, { ascending: true });
+			.order(finalSort, { ascending: true })
+			.order('id', { ascending: true }); // secondary sort to maintain consistent order
 		// }
 		//
 		if (error) throw new Error(error.message);
@@ -686,7 +687,7 @@ function handleInputChange(field, value) {
 					<tr class={checkConflict(clas) ? 'conf-row' : 'row'} transition:fade>
 						<!-- Course Column -->
 						<td class="item course" >
-							{#if $editingRowIndex === rowIndex}
+							<!-- {#if $editingRowIndex === rowIndex}
 								<input 
 									type="text" 
 									value={$editingRow.course} 
@@ -703,12 +704,22 @@ function handleInputChange(field, value) {
 								{/if}
 							</div>
 								
-							{/if}
+							{/if} -->
+
+							<!-- We locked course editing -->
+							<div class="flex flex-row items-center">
+								{clas.course}
+								{#if (obligationClasses[semester].includes(clas.course))}
+								<div class="relative ml-1">
+									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="white" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="z-40"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+								</div>
+								{/if}
+							</div>
 						</td>
 	
 						<!-- Type Column -->
 						<td class="item type">
-							{#if $editingRowIndex === rowIndex}
+							<!-- {#if $editingRowIndex === rowIndex}
 								<input 
 									type="text" 
 									value={$editingRow.type} 
@@ -717,12 +728,15 @@ function handleInputChange(field, value) {
 								/>
 							{:else}
 								{clas.type}
-							{/if}
+							{/if} -->
+
+							<!-- We locked type editing -->
+							{clas.type}
 						</td>
 	
 						<!-- Section Column -->
 						<td class="item section">
-							{#if $editingRowIndex === rowIndex}
+							<!-- {#if $editingRowIndex === rowIndex}
 								<input 
 									type="text" 
 									value={$editingRow.class_id} 
@@ -731,7 +745,10 @@ function handleInputChange(field, value) {
 								/>
 							{:else}
 								{clas.class_id}
-							{/if}
+							{/if} -->
+
+							<!-- We locked section editing -->
+							 {clas.class_id}
 						</td>
 	
 						<!-- Days Column -->

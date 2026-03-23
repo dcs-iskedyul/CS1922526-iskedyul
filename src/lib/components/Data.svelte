@@ -4,7 +4,7 @@
 
 	import Sidebar from './Sidebar.svelte';
 	import apiClient from '$lib/apiClient';
-    import { Toaster, toast } from 'svelte-sonner';
+	import { Toaster, toast } from 'svelte-sonner';
 
 	// @: Archive Module - Imported academicYears for filtering by academic year
 	import { subject_info, schedules, rooms, storeClasses, obligationClasses, semesters, labSubjects, instructors as instructorsStore } from '$lib/store.js';
@@ -12,7 +12,7 @@
 	import UploadDropdownButton from './UploadDropdownButton.svelte';
 	import { clickOutside } from "svelte-outside";
 	import { tapOutside } from "svelte-outside";
-	
+
 	// for incomplete adding class
 	import {Notifications, acts} from '@tadashi/svelte-notification'
 
@@ -27,11 +27,12 @@
 	let newAcademicYearInput = $state(""); // @: Archive Module - Reactive variable for new academic year input
 	let selectedAcademicYear = $state(""); // @: Archive Module - State Variable for Academic Year
 
-	// @: Archive Module - Fetch Academic Years from Supabase
-	onMount(async() => {
-		await fetchAcademicYears();
-	});
+	// // @: Archive Module - Fetch Academic Years from Supabase
+	// onMount(async () => {
+	// 	await fetchAcademicYears();
+	// });
 
+	// @: Archive Module - Academic Years functions
 	async function fetchAcademicYears() {
 		const { data, error } = await supabase
 			.from('academic_years')
@@ -53,7 +54,14 @@
 			academicYears = data.map(item => item.year);
 
 			if (selectedAcademicYear === "" && academicYears.length > 0) {
-				selectedAcademicYear = academicYears[academicYears.length - 1]; // Set to the latest academic year
+
+				const savedYear = localStorage.getItem('iskedyul_saved_academic_year');
+
+				if (savedYear && academicYears.includes(savedYear)) {
+					selectedAcademicYear = savedYear;
+				} else {
+					selectedAcademicYear = academicYears[academicYears.length - 1]; // Set to the latest academic year
+				}
 				recomputeDemandAnalysis();
 			}
 		}
@@ -106,16 +114,16 @@
 	let instructors = $state([]); // @fix: conflict-logic
 
 	//-----------------Fetch Instructor---------------
-        async function fetchInitialInstructors() {
-            try {
-                console.log("Data.svelte: Fetching initial instructors");
-                const data = await apiClient.getInstructors();
-                instructorsStore.set(data);
-            } catch (error) {
-                console.error("Error fetching initial instructors:", error);
-                toast.error("Failed to load instructors list.");
-            }
-        }
+		async function fetchInitialInstructors() {
+			try {
+				console.log("Data.svelte: Fetching initial instructors");
+				const data = await apiClient.getInstructors();
+				instructorsStore.set(data);
+			} catch (error) {
+				console.error("Error fetching initial instructors:", error);
+				toast.error("Failed to load instructors list.");
+			}
+		}
 
 	//------------------Sort and Filtering func ------------------
 
@@ -142,24 +150,24 @@
 	onDestroy(unsubscribe);
 
 	// onDestroy(unsubscribe) gets the data from storeClasses everytime Classes.svelte does any change to the classes (edit/delete)
-	
+
 	// Important for updating the entire page. Update variable is frequently flipped (i.e. update = !update) to activate the various keys to update the page.
 	let update = $state(false);
-	
+
 	// boolean to know if modal should be shown.
 	let showModal = $state(false);
 
 	// boolean to know if "Are you sure to delete" modal should be shown.
 	let showDeleteModal = $state(false);
-	
+
 	// acts similar to update but just for the modal. Svelte will not update the page unless a key has been changed, hence modalUpdate is that key.
 	let modalUpdate = $state(false);
 
 	// acts similar to update but just for the delete modal. Svelte will not update the page unless a key has been changed, hence modalUpdate is that key.
 	let modalDeleteUpdate = $state(false);
 
-	
-	
+
+
 	// Uploading CSVs is implemented here, hence to save the list of classes in those CSVs, we store them here in a classes array.
 	let uploadedClasses = $state([]);
 	// Initialized missing reactive array used by CSV parser and Data insertion functions to prevent mapping errors
@@ -169,13 +177,13 @@
 	let selectedSchedule = $state("1")
 
 	let selectedSemester = $state("1")
-	
+
 	// Helps determine if a file of classes has been uploaded and is ready to be saved, replaced or etc.
 	let hasUploadedFile = $state(false);
-	
+
 	// Shows which format was selected to determine how the code should parse the CSV (in CRS or Faculty Loading format)
 	let selectedFormat = $state("faculty");
-	
+
 	let fileInputRef;
 
 	let obligations = $state([])
@@ -218,72 +226,72 @@
 
 	// Function to download CSV in Faculty Loading Format
 	async function downloadCSV() {
-        // Step 1: Fetch data from Supabase
-        let { data, error } = await supabase
-            .from('classes')
-            .select('id, course, class_id, instructor, start_time, end_time, location, days, type')
+		// Step 1: Fetch data from Supabase
+		let { data, error } = await supabase
+			.from('classes')
+			.select('id, course, class_id, instructor, start_time, end_time, location, days, type')
 			.eq("schedule", selectedSchedule)
 			.eq("semester", selectedSemester)
 			.eq("academic_year", selectedAcademicYear); // @: Archive Module: Filter schedules by selected semester and academic year
 
-        if (error) {
-            console.error('Error fetching data:', error);
-            return;
-        }
+		if (error) {
+			console.error('Error fetching data:', error);
+			return;
+		}
 
-        // Step 2: Convert to CSV format
-        const headers = ['Course', 'Type', 'Section', 'Day', 'Time','Room', 'Instructor', 'Load', 'Remarks'];
-        const csvRows = [
-        headers.join(','), // CSV header
-        ...data.map(row => [
-            `"${row.course || ''}"`,
-            `"${row.type || ''}"`,
-            `"${row.class_id || ''}"`,  // Renamed to 'section'
-            `"${formatDays(row.days)}"`,
-            `="${row.start_time && row.end_time ? formatTime(row.start_time).slice(0,-2) + '-' + formatTime(row.end_time).slice(0,-2) : ''}"`, // Merged 'time' column
-            `"${formatRooms(row.location) || ''}"`,
-            `"${row.instructor || ''}"`,
+		// Step 2: Convert to CSV format
+		const headers = ['Course', 'Type', 'Section', 'Day', 'Time','Room', 'Instructor', 'Load', 'Remarks'];
+		const csvRows = [
+		headers.join(','), // CSV header
+		...data.map(row => [
+			`"${row.course || ''}"`,
+			`"${row.type || ''}"`,
+			`"${row.class_id || ''}"`,  // Renamed to 'section'
+			`"${formatDays(row.days)}"`,
+			`="${row.start_time && row.end_time ? formatTime(row.start_time).slice(0,-2) + '-' + formatTime(row.end_time).slice(0,-2) : ''}"`, // Merged 'time' column
+			`"${formatRooms(row.location) || ''}"`,
+			`"${row.instructor || ''}"`,
 			`""`,
 			`""`
-        ].join(','))
-    ];
+		].join(','))
+	];
 
-        const csvContent = csvRows.join('\n');
+		const csvContent = csvRows.join('\n');
 
-        // Step 3: Create a downloadable file
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'classes.csv';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
+		// Step 3: Create a downloadable file
+		const blob = new Blob([csvContent], { type: 'text/csv' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'classes.csv';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	}
 
 	// Function to convert days format
-    function formatDays(days) {
-        if (!days) return '';
-        return days
-            .replace(/Mon/g, 'M')
-            .replace(/Tues/g, 'T')
-            .replace(/Wed/g, 'W')
-            .replace(/Thurs/g, 'Th')
-            .replace(/Fri/g, 'F')
-            .replace(/Sat/g, 'S')
+	function formatDays(days) {
+		if (!days) return '';
+		return days
+			.replace(/Mon/g, 'M')
+			.replace(/Tues/g, 'T')
+			.replace(/Wed/g, 'W')
+			.replace(/Thurs/g, 'Th')
+			.replace(/Fri/g, 'F')
+			.replace(/Sat/g, 'S')
 			.replace(/,/g, '');
-    }
+	}
 
-    // Function to convert time to 12-hour format
-    function formatTime(time) {
-        if (!time) return '';
-        let [hour, minute] = time.split(':').map(Number);
-        let period = hour >= 12 ? 'PM' : 'AM';
-        hour = hour % 12 || 12; // Convert 0 to 12 for AM
+	// Function to convert time to 12-hour format
+	function formatTime(time) {
+		if (!time) return '';
+		let [hour, minute] = time.split(':').map(Number);
+		let period = hour >= 12 ? 'PM' : 'AM';
+		hour = hour % 12 || 12; // Convert 0 to 12 for AM
 		return `${hour}${minute === 0 ? '' : `:${minute}`}${period}`;
-    }
-	
+	}
+
 	//function to return room names for faculty loading
 	function formatRooms(str) {
 		switch(str){
@@ -413,6 +421,8 @@
 	// @: Archive Module - Added Academic Year Change Handler
 	function handleAcademicYearChange(event) {
 		selectedAcademicYear = event.target.value;
+
+		localStorage.setItem('iskedyul_saved_academic_year', selectedAcademicYear);
 
 		currentAnalysis = [];
 		demandData[selectedSchedule] = {rawDemand: [], analysis: {}};
@@ -1058,13 +1068,13 @@
 
 
 	// ------------------------ Edit Class Helper Functions ----------------------
-	
-	
+
+
 	let editingCell = null;
 	let editValue = '';
 	let editColumn = '';
-	
-	
+
+
 	async function handleKeyDown(event, clas, column, value) {
 		editValue = value;
 		editColumn = column;
@@ -1080,7 +1090,7 @@
 		editingCell = null;
 		}
 	}
-	
+
 	// @fix: conflict-logic
 	// Secures loophole on table editing feature
 	async function saveEdit(clas, column, value) {
@@ -1140,7 +1150,7 @@
 		// editingCell = null;
 		// update = !update
 	}
-	
+
 	// Click outside to cancel edit
 	async function handleClickOutside(event) {
 		console.log("handleClickOutside called");
@@ -1158,13 +1168,26 @@
 		
 		
 	}
-	
+
+	async function fetchInstructorsForModal() {
+		const { data, error } = await supabase
+			.from('instructors')
+			.select()
+			.order('name', {ascending: true});
+		if (!error && data) instructors = data;
+	}
+
+	// @: Archive Module - Added fetching of academic years
 	onMount(async () => {
-		// Replaced getInstructorData() to apiClient.getInstructorData() to prevent initialization crash
-		instructors = await apiClient.getInstructorData(); // @fix: conflict-logic
+		await fetchAcademicYears();
+
+		await fetchInstructorsForModal();
+
+		// // Replaced getInstructorData() to apiClient.getInstructorData() to prevent initialization crash
+		// instructors = await apiClient.getInstructorData(); // @fix: conflict-logic
+
 		document.addEventListener('click', handleClickOutside);
 		return () => document.removeEventListener('click', handleClickOutside);
-		
 	});
 
 
@@ -1187,34 +1210,49 @@
 
 		let submit = $state(false);
 
-		async function handleSubmit() {
+		async function handleSubmit(event) {
+			event.preventDefault();
+
 			console.log("IM SUBMITTING")
-			showModal = false;
-			if(newDays == ""){
+
+			// showModal = false;
+			// if(newDays == ""){
+			// 	acts.add({mode: 'danger' , message: '⚠ Cannot add class with no days.'})
+			// 	console.log("did it work?")
+			// }
+			// if(newSched == null || newSched == ""){
+			// 	acts.add({mode: 'danger' , message: '⚠ Cannot add class with no schedule.'})
+			// 	console.log("did it work?")
+			// }
+			// else{
+			// 	modalUpdate = !modalUpdate;
+			// 	submit = true;
+			// 	for (let i = 0; i < 7; i++) {
+			// 		if (daysArray[i] == true) {
+			// 			newDays.concat(days[i]);
+			// 		}
+			// 	}
+			// }
+			// update = true;
+
+			if (daysArray.length === 0) {
 				acts.add({mode: 'danger' , message: '⚠ Cannot add class with no days.'})
-				console.log("did it work?")
+				return;
 			}
-			if(newSched == null || newSched == ""){
+			if(!newSched) {
 				acts.add({mode: 'danger' , message: '⚠ Cannot add class with no schedule.'})
-				console.log("did it work?")
+				return;
 			}
-			else{
-				modalUpdate = !modalUpdate;
-				submit = true;
-				for (let i = 0; i < 7; i++) {
-					if (daysArray[i] == true) {
-						newDays.concat(days[i]);
-					}
-				}
-			}
-			update = true;
+
+			submit = true;
+			await sendData();
 		}
 
-		async function handleSubmitEnd() {
-			console.log("HandelSubmitEnd Called")
-			submit = false;
-			update = false;
-		}
+		// async function handleSubmitEnd() {
+		// 	console.log("HandelSubmitEnd Called")
+		// 	submit = false;
+		// 	update = false;
+		// }
 
 		async function handleDeleteSubmitEnd() {
 			submit = false;
@@ -1235,7 +1273,8 @@
 		// @fix: conflict-logic
 		// Validation function to prevent overlaps
 		function checkConflict(newClass, existingClasses) {
-			const newDays = newClass.days.split(',');
+			// const newDays = newClass.days.split(',');
+			const newDays = newClass.days ? newClass.days.split(',') : [];
 			const newStart = timeToMinutes(newClass.start_time);
 			const newEnd = timeToMinutes(newClass.end_time);
 
@@ -1266,9 +1305,9 @@
 			console.log("IM INSERTING")
 			newDays = daysArray.join(',');
 
-			if(newDays == ""){
-				newDays = null
-			}
+			// if(newDays == ""){
+			// 	newDays = null
+			// }
 
 			var year_level = '-';
 			var teaching_load = 0;
@@ -1316,17 +1355,35 @@
 			}
 
 			const { data, error } = await supabase.from('classes').insert([newClassData]);
-			if (error) throw new Error(error.message);
+			if (error) {
+				toast.error("Insertion failed: " + error.message);
+				submit = false;
+				return;
+			}
 
+			toast.success("Class added successfully!");
+
+			// Clear inputs
+			newCourse = '';
+			newClass = '';
+			daysArray = [];
 			newDays = '';
+			newInstr = 'TBA';
+			newLecPartner = '';
+
 			console.log(newDays);
+
 			submit = false;
-			update = false;
+			showModal = false;
+			modalUpdate = !modalUpdate;
+
 			currentAnalysis = []
 			demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
 
 			// hasUploadedDemandFile[selectedSchedule] = false
-			recomputeDemandAnalysis()
+			await recomputeDemandAnalysis()
+
+			update = !update;
 			return data;
 
 		}
@@ -1412,25 +1469,24 @@
 			return searchCourse, searchSection
 
 		}
-
-
+		
 // --- HTML PORTION STARTS HERE --- \\
 </script>
 
-<div>
-{#key classesValue}
-	{#await recomputeDemandAnalysis()}
-		<div> </div>
-	{:then data}
-	<div> </div>
-	{/await}
-{/key}
+	<div>
+		{#key classesValue}
+			{#await recomputeDemandAnalysis()}
+				<div> </div>
+					{:then data}
+				<div> </div>
+			{/await}
+		{/key}
 
-</div>
+	</div>
 
-<div class="flex">
+	<div class="flex">
 	<Sidebar />
-	
+
 	<Toaster position="top-center" richColors={true} />
 
 	<div class="flex-1 p-6 ml-64">
@@ -1565,7 +1621,7 @@
 				</div>
 			</div>
 			{/key}
-            
+			
 			<!-- Upload Class CSV Section -->
 			<div class="bg-white rounded-lg shadow p-4 border border-gray-200">
 				<h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Schedule</h2>
@@ -1760,14 +1816,14 @@
 		{/key}
 		</div>
 	</div>
-</div>
+	</div>
 
-<!-- -------------------------------------------------------- -->
-<!-- THe Modal for adding a class -->
- <!-- -------------------------------------------------------- -->
-{#key modalUpdate}
+	<!-- -------------------------------------------------------- -->
+	<!-- The Modal for adding a class -->
+	<!-- -------------------------------------------------------- -->
+	{#key modalUpdate}
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (because of reasons) -->
-{#if modalUpdate}
+	{#if modalUpdate}
 	<div class="backdrop z-100">
 		<div class="modal z-200" use:tapOutside={(e) => clickOutModal()}>
 			<h1 class="title1">Add a New Class</h1>
@@ -1954,36 +2010,14 @@
 					</div>
 					<div class="form-row">
 						<div class="form-col gap-2">
-							<div class = "title2"><label for="days" >Days</label></div>
-							<div class="new-row" >
-								<!-- <div class="griddy"> -->
-									<div>
-										<input class="cont" type="checkbox" bind:group={daysArray} value="Mon" /> Monday
-										<br />
-									</div>
-									<div>
-										<input class="cont" type="checkbox" bind:group={daysArray} value="Tues" />
-										Tuesday
-										<br />
-									</div>
-									<div>
-										<input class="cont" type="checkbox" bind:group={daysArray} value="Wed" />
-										Wednesday
-										<br />
-									</div>
-									<div>
-										<input class="cont" type="checkbox" bind:group={daysArray} value="Thurs" />
-										Thursday
-										<br />
-									</div>
-									<div>
-										<input class="cont" type="checkbox" bind:group={daysArray} value="Fri" />
-										Friday<br />
-									</div>
-									<div>
-										<input class="cont" type="checkbox" bind:group={daysArray} value="Sat" />
-										Saturday<br />
-									</div>
+							<div class = "title2"><label for="days">Days</label></div>
+							<div class="flex flex-wrap gap-2 mt-2">
+								{#each days as day}
+									<label class="flex items-center p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200">
+										<input type="checkbox" bind:group={daysArray} value={day} class="mr-2" />
+										<span>{day}</span>
+									</label>
+								{/each}
 							</div>
 						</div>
 					</div>
@@ -2025,157 +2059,159 @@
 						{/key}
 					</div>
 				</div>
-				<input class="submit-btn" type="submit" value="Submit" onclick={handleSubmitEnd} />
-			</form>
-		</div>
+				<button class="submit-btn cursor-pointer" type="submit" disabled={submit}>
+					{submit ? 'Submitting...' : 'Submit'}
+				</button>
+		</form> </div>
 	</div>
-{/if}
-{/key}
+	{/if}
+	{/key}
 
-{#key modalDeleteUpdate}
-{#if modalDeleteUpdate}
-<div class="backdrop z-100">
-	<div class="delete-modal z-200" use:tapOutside={(e) => clickOutDeleteModal()}>
-		<h3 class="title2">Are you sure to delete {deleteClassCourse} {deleteClassSection}?</h3>
-		<div class="flex">
-			<button
-				class="ml-auto my-6 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-				onclick={handleDeleteSubmitEnd}
-			>
-				Delete
-			</button>
+	{#key modalDeleteUpdate}
+		{#if modalDeleteUpdate}
+		<div class="backdrop z-100">
+			<div class="delete-modal z-200" use:tapOutside={(e) => clickOutDeleteModal()}>
+				<h3 class="title2">Are you sure to delete {deleteClassCourse} {deleteClassSection}?</h3>
+				<div class="flex">
+					<button
+						class="ml-auto my-6 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+						onclick={handleDeleteSubmitEnd}
+					>
+						Delete
+					</button>
+				</div>
+			</div>
 		</div>
-		
-	</div>
-</div>
-{/if}
-{/key}
-<div>
-    {#if submit}
-        {#await sendData()}
-            <p class="text-white">Sending data...</p>
-        {:then data}
-            <p class="text-white">Successfully sent data.</p>
-        {:catch error}
-            <p>Something went wrong while sending the data:</p>
-            <pre>{error}</pre>
-        {/await}
-    {/if}
-</div>
-<style>
-	:global(body) {
-		background-color: #f9fafb;
-	}
-	/* .to_focus{
-		--tw-ring-color: rgba(16, 185, 129, var(--tw-ring-opacity));
-		border-color: var(--color-green-500);
-	} */
-	.cont {
-		display: inline;
-		gap: 10px;
-		background-color: red;
-	}
-	.title1 {
-		text-align: left;
-		font-size: 2rem;
-		font-weight: 800;
-	}
-	.title2{
-		text-align: left;
-		font-size: 1.25rem;
-		font-weight: 600;
-	}
-	.backdrop {
-		width: 100%;
-		height: 100%;
-		position: fixed;
-		background: rgba(0, 0, 0, 0.8);
-		overflow-y: auto;
-		z-index: 100;
-	}
-	.modal {
-		/* text-align: center; */
-		padding: 5rem;
-		border-radius: 10px;
-		max-width: 60rem;
-		margin: 10% auto;
-		background: white;
-		/* justify-items: center; */
-		justify-content: space-between;
-		z-index: 150;
-	}
+		{/if}
+	{/key}
 
-	.delete-modal {
-		/* text-align: center; */
-		padding: 2rem;
-		border-radius: 10px;
-		max-width: 40rem;
-		margin: 5% auto;
-		background: white;
-		/* justify-items: center; */
-		justify-content: space-between;
-		z-index: 150;
-	}
-	.form_total {
-		display: flex;
-		flex-wrap: wrap;
-		justify-items: center;
-		justify-content: space-between;
-	}
-	.center_col {
-		display: flex;
-		flex-direction: row;
-		place-items: center;
-		justify-content: space-between;
-	}
-	/* input[type='text'] {
-		width: 15rem;
-		background-color: rgb(243 244 246);
-		border-color: rgb(209 213 219);
-		border-radius: 0.25rem;
-		padding: 1rem;
-		margin-bottom: 0.5rem;
-	} */
-	.form-row {
-		padding-top: 10px;
-		width: 100%;
-	}
-	.new-row {
-		display: flex;
-		flex-direction: row;
-		gap: 50px;
-		/* background-color: aqua; */
-		flex-wrap:wrap;
-	}
+	<!-- <div>
+		{#if submit}
+			{#await sendData()}
+				<p class="text-white">Sending data...</p>
+			{:then data}
+				<p class="text-white">Successfully sent data.</p>
+			{:catch error}
+				<p>Something went wrong while sending the data:</p>
+				<pre>{error}</pre>
+			{/await}
+		{/if}
+	</div> -->
 
-	input[type='checkbox'] {
-		-webkit-appearance:none;
-		width:15px;
-		height:15px;
-		background:white;
-		border-radius:5px;
-		border:2px solid #555;
-	}
-	input[type='checkbox']:checked {
-		background:green;
-	}
-	.form-col {
-		text-align: left;
-		display: flex;
-		flex-direction: column;
-		padding-top: 10px;
-		width: 100%;
-		/* margin-left: 2.5rem; */
-		margin-right: 2.5rem;
-	}
-	.submit-btn {
-		margin-top: 1.5rem;
-		background-color: green;
-		color: white;
-		padding-top: 0.625rem;
-		padding-bottom: 0.625rem;
-		padding-left: 1.5rem;
-		padding-right: 1.5rem;
-		border-radius: 0.625rem;
-	}
-</style>
+	<style>
+		:global(body) {
+			background-color: #f9fafb;
+		}
+		/* .to_focus{
+			--tw-ring-color: rgba(16, 185, 129, var(--tw-ring-opacity));
+			border-color: var(--color-green-500);
+		} */
+		.cont {
+			display: inline;
+			gap: 10px;
+			background-color: red;
+		}
+		.title1 {
+			text-align: left;
+			font-size: 2rem;
+			font-weight: 800;
+		}
+		.title2{
+			text-align: left;
+			font-size: 1.25rem;
+			font-weight: 600;
+		}
+		.backdrop {
+			width: 100%;
+			height: 100%;
+			position: fixed;
+			background: rgba(0, 0, 0, 0.8);
+			overflow-y: auto;
+			z-index: 100;
+		}
+		.modal {
+			/* text-align: center; */
+			padding: 5rem;
+			border-radius: 10px;
+			max-width: 60rem;
+			margin: 10% auto;
+			background: white;
+			/* justify-items: center; */
+			justify-content: space-between;
+			z-index: 150;
+		}
+
+		.delete-modal {
+			/* text-align: center; */
+			padding: 2rem;
+			border-radius: 10px;
+			max-width: 40rem;
+			margin: 5% auto;
+			background: white;
+			/* justify-items: center; */
+			justify-content: space-between;
+			z-index: 150;
+		}
+		.form_total {
+			display: flex;
+			flex-wrap: wrap;
+			justify-items: center;
+			justify-content: space-between;
+		}
+		.center_col {
+			display: flex;
+			flex-direction: row;
+			place-items: center;
+			justify-content: space-between;
+		}
+		/* input[type='text'] {
+			width: 15rem;
+			background-color: rgb(243 244 246);
+			border-color: rgb(209 213 219);
+			border-radius: 0.25rem;
+			padding: 1rem;
+			margin-bottom: 0.5rem;
+		} */
+		.form-row {
+			padding-top: 10px;
+			width: 100%;
+		}
+		.new-row {
+			display: flex;
+			flex-direction: row;
+			gap: 50px;
+			/* background-color: aqua; */
+			flex-wrap:wrap;
+		}
+
+		input[type='checkbox'] {
+			-webkit-appearance:none;
+			width:15px;
+			height:15px;
+			background:white;
+			border-radius:5px;
+			border:2px solid #555;
+		}
+		input[type='checkbox']:checked {
+			background:green;
+		}
+		.form-col {
+			text-align: left;
+			display: flex;
+			flex-direction: column;
+			padding-top: 10px;
+			width: 100%;
+			/* margin-left: 2.5rem; */
+			margin-right: 2.5rem;
+		}
+		.submit-btn {
+			margin-top: 1.5rem;
+			background-color: green;
+			color: white;
+			padding-top: 0.625rem;
+			padding-bottom: 0.625rem;
+			padding-left: 1.5rem;
+			padding-right: 1.5rem;
+			border-radius: 0.625rem;
+		}
+	</style>
