@@ -1,16 +1,5 @@
 import { writable } from 'svelte/store';
 
-// @: Archive Module
-export const academicYears = [
-    "2020-2021",
-    "2021-2022",
-    "2022-2023",
-    "2023-2024",
-    "2024-2025",
-    "2025-2026",
-    "2026-2027",
-];
-
 export const rooms = [
     { name: "TBA", capacity: 0},
     { name: "AECH Accenture Rm", capacity: 90 },

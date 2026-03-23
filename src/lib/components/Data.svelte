@@ -7,7 +7,7 @@
     import { Toaster, toast } from 'svelte-sonner';
 
 	// @: Archive Module - Imported academicYears for filtering by academic year
-	import { subject_info, schedules, rooms, storeClasses, obligationClasses, semesters, labSubjects, instructors as instructorsStore, academicYears } from '$lib/store.js';
+	import { subject_info, schedules, rooms, storeClasses, obligationClasses, semesters, labSubjects, instructors as instructorsStore } from '$lib/store.js';
 	import DropdownButton from './DropdownButton.svelte';
 	import UploadDropdownButton from './UploadDropdownButton.svelte';
 	import { clickOutside } from "svelte-outside";
@@ -23,7 +23,84 @@
 	import Classes from './Classes.svelte';
 	import SortAndFilterDropdownButton from './SortAndFilterDropdownButton.svelte';
 
-	let selectedAcademicYear = $state("2024-2025"); // @: Archive Module - State Variable for Academic Year
+	let academicYears = $state([]); // @: Archive Module - Reactive variable for academic years
+	let newAcademicYearInput = $state(""); // @: Archive Module - Reactive variable for new academic year input
+	let selectedAcademicYear = $state(""); // @: Archive Module - State Variable for Academic Year
+
+	// @: Archive Module - Fetch Academic Years from Supabase
+	onMount(async() => {
+		await fetchAcademicYears();
+	});
+
+	async function fetchAcademicYears() {
+		const { data, error } = await supabase
+			.from('academic_years')
+			.select('year')
+			.order('year', { ascending: true });
+
+		if (error) {
+			console.error('Error fetching academic years:', error);
+			return;
+		}
+
+		if (data) {
+			const sortedData = data.sort((a, b) => {
+				const yearA = parseInt(a.year.split('-')[0]);
+				const yearB = parseInt(b.year.split('-')[0]);
+				return yearA - yearB;
+			});
+
+			academicYears = data.map(item => item.year);
+
+			if (selectedAcademicYear === "" && academicYears.length > 0) {
+				selectedAcademicYear = academicYears[academicYears.length - 1]; // Set to the latest academic year
+				recomputeDemandAnalysis();
+			}
+		}
+	}
+
+
+	async function addNewAcademicYear() {
+		const newYear = newAcademicYearInput.trim();
+		if (!newYear) return;
+
+		// Format Validation
+		const yearPattern = /^\d+-\d+$/;
+		if (!yearPattern.test(newYear)) {
+			toast.error("Invalid format! Please use numbers like 2026-2027");
+			return;
+		}
+
+		// Logic Validation
+		const [startYear, endYear] = newYear.split('-').map(Number);
+		if (startYear + 1 !== endYear) {
+			toast.error("Invalid A.Y.! The second year must be exactly 1 year after the first (e.g., 2026-2027).");
+			return;
+		}
+
+		const { error } = await supabase
+			.from('academic_years')
+			.insert([{ year: newYear }]);
+		
+		if (error) {
+			console.error('Error adding academic year:', error);
+			toast.error('Failed to add A.Y. ' + newYear + '. It might already exist!');
+			return;
+		}
+
+		newAcademicYearInput = "";
+		await fetchAcademicYears();
+
+		toast.success('Academic Year ' + newYear + ' added successfully!');
+
+		selectedAcademicYear = newYear;
+
+		currentAnalysis = [];
+		demandData[selectedSchedule] = {rawDemand: [], analysis: {}};
+		hasUploadedDemandFile[selectedSchedule] = false;
+		recomputeDemandAnalysis();
+		update = !update;
+	}
 
 	// Declared reactive state array to prevent undefined error in UI dropdowns
 	let instructors = $state([]); // @fix: conflict-logic
@@ -1336,6 +1413,8 @@
 
 		}
 
+
+// --- HTML PORTION STARTS HERE --- \\
 </script>
 
 <div>
@@ -1352,21 +1431,45 @@
 <div class="flex">
 	<Sidebar />
 	
+	<Toaster position="top-center" richColors={true} />
+
 	<div class="flex-1 p-6 ml-64">
 		<div class="flex justify-between items-center mb-6">
 			<div class ="flex flex-row gap-10">
 				<h1 class="text-3xl font-bold text-gray-800">Class Schedule</h1>
 				
 				<!-- @: Archive Module - Added AcademicYear -->
-				<select
-					value={selectedAcademicYear}
-					onchange={handleAcademicYearChange}
-					class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-				>
-					{#each academicYears as year}
-						<option value={year}> AY{year}</option>
-					{/each}
-				</select>
+				<div class="flex flex-wrap items-center gap-2">
+					<select
+						bind:value={selectedAcademicYear}
+						onchange={handleAcademicYearChange}
+						class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+					>
+						{#each academicYears as year}
+							<option value={year}> A.Y. {year}</option>
+						{/each}
+					</select>
+
+					<form
+						onsubmit={(e) => { e.preventDefault(); addNewAcademicYear(); }}
+						class="flex items-center space-x-2"
+					>
+						<input
+							type="text"
+							bind:value={newAcademicYearInput}
+							placeholder="e.g., 2024-2025"
+							class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-green-500 focus:border-green-500 block px-3 py-2"
+							required
+						/>
+
+						<button
+							type="submit"
+							class="text-white bg-green-600 hover:bg-green-700 font-medium rounded-lg text-sm px-3 py-2"
+						>
+							Add Year
+						</button>
+					</form>
+				</div>
 
 				<!-- Semesters -->
 				<div class = "flex gap-4">
