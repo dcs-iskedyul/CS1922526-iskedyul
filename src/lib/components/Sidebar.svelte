@@ -55,33 +55,46 @@
                 <span class="ms-3 group-hover:text-black">Dashboard</span>
              </a>
           </li>
+
           <li>
              <a href=/profile class="flex items-center p-2 text-white rounded-lg hover:bg-gray-100 group">
                 <i class="fa-solid fa-user group-hover:invert"></i>
                 <span class="flex-1 ms-3 whitespace-nowrap group-hover:text-black">Profile</span>
              </a>
           </li>
+
           <li>
              <a href=/schedules class="flex items-center p-2 text-white rounded-lg hover:bg-gray-100 group">
                 <i class="fa-solid fa-calendar-days group-hover:invert"></i>
                 <span class="flex-1 ms-3 whitespace-nowrap group-hover:text-black">Schedules</span>
              </a>
           </li>
+
+          <li>
+            <a href=/calendar class="flex items-center p-2 text-white rounded-lg hover:bg-gray-100 group">
+               <i class="fa-solid fa-calendar-days group-hover:invert"></i>
+               <span class="flex-1 ms-3 whitespace-nowrap group-hover:text-black">Calendar</span>
+            </a>
+          </li>
+
           <li>
              <a href=/data class="flex items-center p-2 text-white rounded-lg hover:bg-gray-100 group">
                 <i class="fa-solid fa-folder-open group-hover:invert"></i>
                 <span class="flex-1 ms-3 whitespace-nowrap group-hover:text-black">Data</span>
              </a>
           </li>
+
           <li>
                <button onclick={logOutSupabase} class="flex items-center p-2 text-white rounded-lg hover:bg-gray-100 group">
                 <i class="fa-solid fa-right-to-bracket group-hover:invert"></i>
                 <span class="flex-1 ms-3 whitespace-nowrap group-hover:text-black">Log out</span>
              </button>
           </li>
+
        </ul>
     </div>
-</aside> 
+</aside>
+
 <!-- {/if} -->
 <!-- 
 <div>

@@ -1,93 +1,55 @@
 <script>
     import Table from "../../lib/components/Table.svelte";
-    import { rooms } from "$lib/store.js"
+    import { rooms } from "$lib/store.js";
     import { schedules } from '$lib/store.js';
-    //sample data
-    let pastelColors = {
-    pink: "#df746a",   // pastel pink
-    orange: "#eba434", // pastel orange
-    green: "#43b770", // pastel green
-    blue: "#6f80d3"      // pastel blue
-  };
-   const subjects1 = [
-    { name: "CS140 Lec", professor: "Prof. Dela Cruz", day: "FRI", startTime: "8:30", endTime: "10:00", color: pastelColors["green"] },
-    { name: "CS140 Lec", professor: "Prof. Dela Cruz", day: "WED", startTime: "8:30", endTime: "10:00", color: pastelColors["green"]},
-    { name: "CS140 Lab", professor: "Prof. Dela Cruz", day: "FRI", startTime: "13:00", endTime: "16:00", color: pastelColors["green"]},
     
-    { name: "CS 138", professor: "Prof. Juan", day: "TUES", startTime: "10:00", endTime: "11:30", color: pastelColors["blue"]},
-    { name: "CS 138", professor: "Prof. Juan", day: "THURS", startTime: "10:00", endTime: "11:30", color: pastelColors["blue"]},
-    
-    { name: "CS 165", professor: "Prof. Lorem", day: "TUES", startTime: "11:30", endTime: "13:00", color: pastelColors["pink"]},
-    { name: "CS 165", professor: "Prof. Ipsum", day: "THURS", startTime: "11:30", endTime: "13:00", color: pastelColors["pink"]},
-    
-    { name: "CS 150", professor: "Prof. Dolor", day: "WED", startTime: "10:00", endTime: "11:30", color: pastelColors["orange"]},
-    { name: "CS 150", professor: "Prof. Dolor", day: "FRI", startTime: "10:00", endTime: "11:30", color: pastelColors["orange"]},
-    
-    
-    ];
-    const subjects2 = [
-    { name: "CS 150", professor: "Prof. Dolor", day: "WED", startTime: "10:00", endTime: "11:30", color: pastelColors["orange"]},
-    { name: "CS 150", professor: "Prof. Dolor", day: "FRI", startTime: "10:00", endTime: "11:30", color: pastelColors["orange"]},
-    ];
-    const subjects3 = [
-    { name: "CS140 Lec", professor: "Prof. Dela Cruz", day: "TUES", startTime: "8:30", endTime: "10:00", color: pastelColors["blue"] },
-    { name: "CS140 Lec", professor: "Prof. Dela Cruz", day: "THURS", startTime: "8:30", endTime: "10:00", color: pastelColors["blue"]},
-    { name: "CS140 Lab", professor: "Prof. Dela Cruz", day: "TUES", startTime: "13:00", endTime: "16:00", color: pastelColors["blue"]},
-    
-    
-    { name: "CS 165", professor: "Prof. Lorem", day: "TUES", startTime: "11:30", endTime: "13:00", color: pastelColors["orange"]},
-    { name: "CS 165", professor: "Prof. Ipsum", day: "THURS", startTime: "11:30", endTime: "13:00", color: pastelColors["orange"]},
-    
-    { name: "CS 150", professor: "Prof. Dolor", day: "WED", startTime: "10:00", endTime: "11:30", color: pastelColors["pink"]},
-    { name: "CS 150", professor: "Prof. Dolor", day: "FRI", startTime: "10:00", endTime: "11:30", color: pastelColors["pink"]},
-  
-    
-    ];
+    // Fix: Catching the props passed from the parent
+    let { selectedAcademicYear, selectedSemester } = $props();
 
-    let selectedSchedule = $state("1")
-
-
-    // Map rooms to their corresponding subjects
- 
-    // Track the selected room
-    let selectedRoom = $state("AECH-Accenture Rm")
-    let update = $state(true)
-
-
+    let selectedSchedule = $state("1");
+    let selectedRoom = $state("AECH-Accenture Rm");
+    let update = $state(true);
 </script>
 
 <div class="flex gap-2 mb-6">
-  {#each schedules as schedule}
-  <button 
-    class="px-6 py-2 rounded-lg {selectedSchedule === schedule ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'}"
-    onclick={() => {selectedSchedule = schedule; console.log(selectedSchedule); update = !update}}
-  >
-    Schedule {schedule}
-  </button>
-  {/each}
+    {#each schedules as schedule}
+    <button 
+        class="px-6 py-2 rounded-lg font-medium transition-colors {selectedSchedule === schedule ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+        onclick={() => {selectedSchedule = schedule; update = !update}}
+    >
+        Schedule {schedule}
+    </button>
+    {/each}
 </div>
 
 <div style="display: flex;" class="room-list">
-    <!-- Left list of rooms -->
-    <div style="width: 200px; padding-right: 20px;">
-      <h3 class="room-header">Rooms</h3>
-      <ul>
-        {#each rooms as room}
-          <li
-            onclick={() => {selectedRoom = room.name; console.log(selectedRoom); update = !update} }
-            style="cursor: pointer; margin-bottom: 5px; padding:8px; border-radius:8px; background-color: {selectedRoom === room.name ? '#ADD6BD' : 'white'};"
-          >
-            {room.name}
-          </li>
-        {/each}
-      </ul>
+    <div style="width: 220px; padding-right: 20px;">
+        <h3 class="font-bold text-gray-700 mb-3 border-b border-gray-200 pb-2">Rooms</h3>
+        <ul class="overflow-y-auto max-h-[600px] custom-scrollbar pr-2">
+            {#each rooms as room}
+                <li
+                    onclick={() => {selectedRoom = room.name; update = !update} }
+                    class="cursor-pointer mb-1.5 p-2.5 rounded-lg text-sm transition-colors {selectedRoom === room.name ? 'bg-green-100 text-green-900 font-bold border border-green-300' : 'bg-white hover:bg-gray-50 border border-transparent'}"
+                >
+                    {room.name}
+                </li>
+            {/each}
+        </ul>
     </div>
-     <!-- Right table for selected room's subjects -->
-    <div style="flex: 1;">
-      {#key update}
-        <Table classroom={selectedRoom} schedule={selectedSchedule} />
-        {console.log("Selected schedule")}
-        {console.log(selectedSchedule)}
-      {/key}
-  </div>
+    
+    <div style="flex: 1; background: white; border-radius: 12px; padding: 1rem; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
+        {#key update}
+            <Table 
+                classroom={selectedRoom} 
+                schedule={selectedSchedule} 
+                academicYear={selectedAcademicYear} 
+                semester={selectedSemester} 
+            />
+        {/key}
+    </div>
 </div>
+
+<style>
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+</style>
