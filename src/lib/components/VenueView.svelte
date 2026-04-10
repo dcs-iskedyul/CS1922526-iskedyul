@@ -1,26 +1,27 @@
 <script>
-    import Table from "../../lib/components/Table.svelte";
+    import Table from "./Table.svelte";
     import { rooms } from "$lib/store.js";
-    import { schedules } from '$lib/store.js';
+    import { browser } from '$app/environment';
+    import { onMount } from 'svelte';
     
-    // Fix: Catching the props passed from the parent
-    let { selectedAcademicYear, selectedSemester } = $props();
+    // Catching the props passed from the parent including Exam overrides
+    let { selectedAcademicYear, selectedSemester, selectedSchedule = "1", isExamMode = false, examDate = "", examType = "" } = $props();
 
-    let selectedSchedule = $state("1");
     let selectedRoom = $state("AECH-Accenture Rm");
     let update = $state(true);
-</script>
 
-<div class="flex gap-2 mb-6">
-    {#each schedules as schedule}
-    <button 
-        class="px-6 py-2 rounded-lg font-medium transition-colors {selectedSchedule === schedule ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
-        onclick={() => {selectedSchedule = schedule; update = !update}}
-    >
-        Schedule {schedule}
-    </button>
-    {/each}
-</div>
+    $effect(() => {
+        if (browser) {
+            sessionStorage.setItem('sched_venue_room', selectedRoom);
+        }
+    });
+
+    onMount(() => {
+        if (sessionStorage.getItem('sched_venue_room')) {
+            selectedRoom = sessionStorage.getItem('sched_venue_room');
+        }
+    });
+</script>
 
 <div style="display: flex;" class="room-list">
     <div style="width: 220px; padding-right: 20px;">
@@ -44,6 +45,9 @@
                 schedule={selectedSchedule} 
                 academicYear={selectedAcademicYear} 
                 semester={selectedSemester} 
+                {isExamMode}
+                {examDate}
+                {examType}
             />
         {/key}
     </div>

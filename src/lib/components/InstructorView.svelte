@@ -2,7 +2,7 @@
     import InstructorClass from "./InstructorClass.svelte";
     import InstructorInfo from  "./InstructorInfo.svelte";
 
-    let { selectedAcademicYear, selectedSemester, onDeleteInstructor } = $props();
+    let { selectedAcademicYear, selectedSemester, selectedSchedule = "1", onDeleteInstructor, isExamMode = false, examDate = "", examType = "" } = $props();
     let activeInstructorTab = $state('instructorClass');
 
     function setTab(tab) {
@@ -28,9 +28,20 @@
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         {#if activeInstructorTab == 'instructorClass'}
-            <InstructorClass {selectedAcademicYear} {selectedSemester} />
+            <InstructorClass 
+                {selectedAcademicYear} 
+                {selectedSemester} 
+                {selectedSchedule} 
+                {isExamMode} 
+                {examDate} 
+                {examType} 
+            />
         {:else if activeInstructorTab == 'instructorInfo'}
-            <InstructorInfo {selectedAcademicYear} {selectedSemester} onDeleteInstructor={onDeleteInstructor} />
+            <InstructorInfo 
+                {selectedAcademicYear} 
+                {selectedSemester} 
+                onDeleteInstructor={onDeleteInstructor} 
+            />
         {/if}
     </div>
 </div>

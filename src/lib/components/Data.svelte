@@ -22,10 +22,25 @@
 	import Papa from 'papaparse';
 	import Classes from './Classes.svelte';
 	import SortAndFilterDropdownButton from './SortAndFilterDropdownButton.svelte';
+    import { browser } from '$app/environment';
 
 	let academicYears = $state([]); // @: Archive Module - Reactive variable for academic years
 	let newAcademicYearInput = $state(""); // @: Archive Module - Reactive variable for new academic year input
 	let selectedAcademicYear = $state(""); // @: Archive Module - State Variable for Academic Year
+
+    // --- NEW EXAM STATE ---
+    let viewMode = $state('Schedule'); // 'Schedule' or 'Exam'
+    let selectedExamType = $state('Midterm');
+    let selectedExamDate = $state('');
+    let examDates = $state([]);
+    let showAddExamDateModal = $state(false);
+    let newExamDateInput = $state('');
+    
+    let showEditExamDateModal = $state(false);
+    let editExamDateInput = $state('');
+
+    let eligibleExamClasses = $state([]);
+    let selectedEligibleClass = $state("");
 
 	// // @: Archive Module - Fetch Academic Years from Supabase
 	// onMount(async () => {
@@ -52,17 +67,58 @@
 			});
 
 			if (selectedAcademicYear === "" && academicYears.length > 0) {
-				const savedYear = localStorage.getItem('iskedyul_saved_academic_year');
+				const savedYear = sessionStorage.getItem('data_ay') || localStorage.getItem('iskedyul_saved_academic_year');
 				if (savedYear && academicYears.includes(savedYear)) {
 					selectedAcademicYear = savedYear;
 				} else {
 					selectedAcademicYear = academicYears[academicYears.length - 1];
 				}
 				recomputeDemandAnalysis();
+                fetchExamDates(); // Load exam dates for the term
 			}
 		}
 	}
 
+    // --- NEW: Fetch dynamically created Exam Dates ---
+    async function fetchExamDates() {
+        if (!selectedAcademicYear || !selectedSemester) return;
+        
+        // Fetch from Exam table AND Calendar Events to ensure no orphans!
+        const { data: schedData } = await supabase
+            .from('exam_schedules').select('date')
+            .eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', selectedExamType);
+            
+        const { data: calData } = await supabase
+            .from('calendar_events').select('date')
+            .eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', 'exam').ilike('title', `${selectedExamType}%`);
+
+        let dates = new Set();
+        if (schedData) schedData.forEach(d => dates.add(d.date));
+        if (calData) calData.forEach(d => dates.add(d.date));
+
+        examDates = [...dates].sort();
+
+        // Only auto-select the first date if we haven't restored one from memory!
+        if (examDates.length > 0 && !examDates.includes(selectedExamDate)) {
+            selectedExamDate = examDates[0];
+        } else if (examDates.length === 0) {
+            selectedExamDate = '';
+        }
+    }
+
+    // --- NEW: Fetch currently scheduled classes for Exam Dropdown ---
+    async function fetchEligibleClasses() {
+        const { data, error } = await supabase
+            .from('classes')
+            .select('course, class_id, schedule, instructor')
+            .eq('academic_year', selectedAcademicYear)
+            .eq('semester', selectedSemester)
+            .order('course')
+            .order('class_id');
+        if (data) {
+            eligibleExamClasses = data;
+        }
+    }
 
 	async function addNewAcademicYear() {
 		const newYear = newAcademicYearInput.trim();
@@ -103,6 +159,7 @@
 		demandData[selectedSchedule] = {rawDemand: [], analysis: {}};
 		hasUploadedDemandFile[selectedSchedule] = false;
 		recomputeDemandAnalysis();
+        fetchExamDates();
 		update = !update;
 	}
 
@@ -162,8 +219,6 @@
 	// acts similar to update but just for the delete modal. Svelte will not update the page unless a key has been changed, hence modalUpdate is that key.
 	let modalDeleteUpdate = $state(false);
 
-
-
 	// Uploading CSVs is implemented here, hence to save the list of classes in those CSVs, we store them here in a classes array.
 	let uploadedClasses = $state([]);
 	// Initialized missing reactive array used by CSV parser and Data insertion functions to prevent mapping errors
@@ -212,6 +267,93 @@
 		fileInputRef.click();
 	}
 
+    // --- NEW VIEW MODE TOGGLES ---
+    async function setScheduleView(sched) {
+        viewMode = 'Schedule';
+        selectedSchedule = sched;
+        update = !update;
+    }
+
+    async function setExamView(type) {
+        viewMode = 'Exam';
+        selectedExamType = type;
+        await fetchExamDates();
+        update = !update;
+    }
+
+    // --- NEW: Add Exam Date pushes to Calendar! ---
+    async function addExamDate() {
+        if (!newExamDateInput) return;
+        if (examDates.includes(newExamDateInput)) { toast.error("This date already exists!"); return; }
+
+        // Push the event to the Calendar!
+        const eventData = {
+            academic_year: selectedAcademicYear,
+            semester: selectedSemester,
+            date: newExamDateInput,
+            type: 'exam',
+            title: `${selectedExamType} Exams`,
+            venue: null,
+            schedule: null
+        };
+        await supabase.from('calendar_events').insert([eventData]);
+
+        examDates = [...examDates, newExamDateInput].sort();
+        selectedExamDate = newExamDateInput;
+        showAddExamDateModal = false;
+        newExamDateInput = '';
+        update = !update;
+
+        toast.success(`Date added! ${selectedExamType} banner injected into Calendar.`);
+    }
+
+    // --- NEW: Edit Date Function ---
+    function openEditDateModal() {
+        editExamDateInput = selectedExamDate;
+        showEditExamDateModal = true;
+    }
+
+    async function editExamDate() {
+        if (!editExamDateInput || editExamDateInput === selectedExamDate) { showEditExamDateModal = false; return; }
+        if (examDates.includes(editExamDateInput)) { toast.error("This date already exists in the exam schedule!"); return; }
+
+        const { error: calErr } = await supabase.from('calendar_events').update({ date: editExamDateInput }).eq('date', selectedExamDate).eq('type', 'exam').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).ilike('title', `${selectedExamType}%`);
+        if (calErr) { toast.error("Error updating calendar."); return; }
+
+        const { error: schedErr } = await supabase.from('exam_schedules').update({ date: editExamDateInput }).eq('date', selectedExamDate).eq('type', selectedExamType).eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
+        if (schedErr) { toast.error("Error updating exams."); return; }
+
+        toast.success("Exam date successfully moved!");
+        selectedExamDate = editExamDateInput;
+        showEditExamDateModal = false;
+        await fetchExamDates();
+        update = !update;
+    }
+
+    // --- NEW: Delete Exam Date logic ---
+    async function deleteExamDate() {
+        if (!selectedExamDate) return;
+        if (!confirm(`Are you sure you want to delete the date ${formatReadableDate(selectedExamDate)}? This will safely remove ALL exams scheduled on this day.`)) return;
+        
+        // Delete from calendar banner
+        await supabase.from('calendar_events').delete().eq('date', selectedExamDate).eq('type', 'exam').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).ilike('title', `${selectedExamType}%`);
+        
+        // Delete actual scheduled blocks on this day
+        await supabase.from('exam_schedules').delete().eq('date', selectedExamDate).eq('type', selectedExamType).eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
+
+        toast.success("Exam date and all associated exams securely deleted.");
+        
+        selectedExamDate = '';
+        await fetchExamDates();
+        update = !update;
+    }
+
+    function formatReadableDate(dateStr) {
+        if (!dateStr) return "";
+        const [y, m, d] = dateStr.split('-');
+        return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
 	function haveCommonItems(str1, str2) {
 		var arr1 = str1.split(',');
 		var arr2 = str2.split(',');
@@ -222,13 +364,18 @@
 
 	// Function to download CSV in Faculty Loading Format
 	async function downloadCSV() {
+        const targetTable = viewMode === 'Exam' ? 'exam_schedules' : 'classes';
+        
+        let query = supabase.from(targetTable).select('*').eq("semester", selectedSemester).eq("academic_year", selectedAcademicYear);
+
+        if (viewMode === 'Exam') {
+            query = query.eq('type', selectedExamType).eq('date', selectedExamDate);
+        } else {
+            query = query.eq('schedule', selectedSchedule);
+        }
+
 		// Step 1: Fetch data from Supabase
-		let { data, error } = await supabase
-			.from('classes')
-			.select('id, course, class_id, instructor, start_time, end_time, location, days, type')
-			.eq("schedule", selectedSchedule)
-			.eq("semester", selectedSemester)
-			.eq("academic_year", selectedAcademicYear); // @: Archive Module: Filter schedules by selected semester and academic year
+		let { data, error } = await query;
 
 		if (error) {
 			console.error('Error fetching data:', error);
@@ -236,21 +383,35 @@
 		}
 
 		// Step 2: Convert to CSV format
-		const headers = ['Course', 'Type', 'Section', 'Day', 'Time','Room', 'Instructor', 'Load', 'Remarks'];
-		const csvRows = [
-		headers.join(','), // CSV header
-		...data.map(row => [
-			`"${row.course || ''}"`,
-			`"${row.type || ''}"`,
-			`"${row.class_id || ''}"`,  // Renamed to 'section'
-			`"${formatDays(row.days)}"`,
-			`="${row.start_time && row.end_time ? formatTime(row.start_time).slice(0,-2) + '-' + formatTime(row.end_time).slice(0,-2) : ''}"`, // Merged 'time' column
-			`"${formatRooms(row.location) || ''}"`,
-			`"${row.instructor || ''}"`,
-			`""`,
-			`""`
-		].join(','))
-	];
+        let headers, csvRows;
+
+        if (viewMode === 'Exam') {
+            headers = ['Course', 'Type', 'Section', 'Date', 'Time', 'Room', 'Instructor'];
+            csvRows = [
+                headers.join(','),
+                ...data.map(row => [
+                    `"${row.course || ''}"`, `"${row.type || ''}"`, `"${row.class_id || ''}"`, `"${row.date || ''}"`,
+                    `="${row.start_time && row.end_time ? formatTime(row.start_time).slice(0,-2) + '-' + formatTime(row.end_time).slice(0,-2) : ''}"`,
+                    `"${row.location || ''}"`, `"${row.instructor || ''}"`
+                ].join(','))
+            ];
+        } else {
+            headers = ['Course', 'Type', 'Section', 'Day', 'Time','Room', 'Instructor', 'Load', 'Remarks'];
+            csvRows = [
+            headers.join(','), // CSV header
+            ...data.map(row => [
+                `"${row.course || ''}"`,
+                `"${row.type || ''}"`,
+                `"${row.class_id || ''}"`,  // Renamed to 'section'
+                `"${formatDays(row.days)}"`,
+                `="${row.start_time && row.end_time ? formatTime(row.start_time).slice(0,-2) + '-' + formatTime(row.end_time).slice(0,-2) : ''}"`, // Merged 'time' column
+                `"${formatRooms(row.location) || ''}"`,
+                `"${row.instructor || ''}"`,
+                `""`,
+                `""`
+            ].join(','))
+        ];
+        }
 
 		const csvContent = csvRows.join('\n');
 
@@ -259,7 +420,7 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = 'classes.csv';
+		a.download = viewMode === 'Exam' ? `${selectedExamType}_Exams_${selectedExamDate}.csv` : `classes_draft_${selectedSchedule}.csv`;
 		document.body.appendChild(a);
 		a.click();
 		document.body.removeChild(a);
@@ -316,41 +477,65 @@
 		}
 	}
 
+    // --- NEW: Exam CSV Uploader & Parser ---
+    async function handleExamUpload(event) {
+        const file = event.target.files[0];
+        if (!file) { hasUploadedFile = false; classes = []; return; }
+        hasUploadedFile = true;
+        
+        Papa.parse(file, {
+            header: true, delimiter: ',', skipEmptyLines: true, transformHeader: h => h.trim(),
+            complete: function(results) {
+                const transformedData = results.data
+                    .filter(row => row.Course && row.Section && row.Date)
+                    .map(row => {
+                        let { start_time, end_time } = parseTimeRangeFromFacultyFormat(row.Time);
+                        let matchedRoom = findMatchingRoom(row.Room);
+                        let fullInstructorName = findInstructorFullName(row.Instructor);
+                        
+                        return { course: row.Course, type: row.Type || selectedExamType, class_id: row.Section, instructor: fullInstructorName, start_time: start_time, end_time: end_time, location: matchedRoom, date: row.Date, size: getVenueCapacity(matchedRoom), academic_year: selectedAcademicYear, semester: selectedSemester };
+                    });
+                
+                classes = transformedData;
+                console.log("Transformed Exam CSV data:", classes);
+            }
+        });
+    }
+
 	async function insertData() {
 		if (!hasUploadedFile) return;
 		
 		try {
+            const targetTable = viewMode === 'Exam' ? 'exam_schedules' : 'classes';
+            let dataToInsert = [];
+
+            if (viewMode === 'Exam') {
+                dataToInsert = classes.map(cls => ({
+                    course: cls.course, class_id: cls.class_id, type: cls.type, instructor: cls.instructor, start_time: cls.start_time, end_time: cls.end_time, location: cls.location, date: selectedExamDate, year: subject_info[cls.course]? subject_info[cls.course]["year"] : "-", size: cls.size, academic_year: selectedAcademicYear, semester: selectedSemester 
+                }));
+            } else {
+                dataToInsert = classes.map(cls => ({
+                    course: cls.course, class_id: cls.section, type: cls.type, instructor: cls.instructor, start_time: cls.start_time, end_time: cls.end_time, location: cls.room, days: cls.days, schedule: selectedSchedule, year: subject_info[cls.course]? subject_info[cls.course]["year"] : "-", lec_partner: cls.lec_partner, academic_year: selectedAcademicYear, semester: selectedSemester // @: Archive Module: Insert schedule with selected semester and academic year
+                }));
+            }
 			
-			const dataToInsert = classes.map(cls => ({
-				course: cls.course,
-				class_id: cls.section,
-				type: cls.type,
-				instructor: cls.instructor,
-				start_time: cls.start_time,
-				end_time: cls.end_time,
-				location: cls.room,
-				days: cls.days,
-				schedule: selectedSchedule,
-				year: subject_info[cls.course]? subject_info[cls.course]["year"] : "-",
-				lec_partner: cls.lec_partner,
-				academic_year: selectedAcademicYear,
-				semester: selectedSemester // @: Archive Module: Insert schedule with selected semester and academic year
-			}));
-			
-			const { data, error } = await supabase
-				.from('classes')
-				.insert(dataToInsert);
+			const { error } = await supabase.from(targetTable).insert(dataToInsert);
 			
 			if (error) {
 				console.error("Error inserting data:", error);
 				throw error;
 			}
-			currentAnalysis = []
-			demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
-			await recomputeDemandAnalysis();
+			
+            if (viewMode === 'Schedule') {
+                currentAnalysis = []
+                demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
+                await recomputeDemandAnalysis();
+            }
+
 			update = !update;
 			hasUploadedFile = false;
 			classes = [];
+            toast.success("CSV Imported Successfully!");
 		} catch (err) {
 			console.error("Error in insertData:", err);
 			alert("Error inserting data: " + err.message);
@@ -361,53 +546,25 @@
 		if (!hasUploadedFile) return;
 		
 		try {
-			
-			const { error: deleteError } = await supabase
-			.from('classes')
-			.delete()
-			.eq("schedule", selectedSchedule)
-			.eq("semester", selectedSemester)
-			.eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter classes by selected semester and academic year
-			
-			if (deleteError) {
-				console.error("Error deleting existing data:", deleteError);
-				throw deleteError;
-			}
+            const targetTable = viewMode === 'Exam' ? 'exam_schedules' : 'classes';
+            
+            if (viewMode === 'Exam') {
+                await supabase.from(targetTable).delete().eq("date", selectedExamDate).eq("type", selectedExamType).eq("semester", selectedSemester).eq("academic_year", selectedAcademicYear); 
+            } else {
+                const { error: deleteError } = await supabase
+                .from('classes')
+                .delete()
+                .eq("schedule", selectedSchedule)
+                .eq("semester", selectedSemester)
+                .eq("academic_year", selectedAcademicYear); // @: Archive Module - Filter classes by selected semester and academic year
+                
+                if (deleteError) {
+                    console.error("Error deleting existing data:", deleteError);
+                    throw deleteError;
+                }
+            }
 
-				
-			
-			const dataToInsert = classes.map(cls => ({
-				course: cls.course,
-				class_id: cls.section,
-				type: cls.type,
-				instructor: cls.instructor,
-				start_time: cls.start_time,
-				end_time: cls.end_time,
-				location: cls.room,
-				days: cls.days,
-				schedule: selectedSchedule,
-				year: subject_info[cls.course]? subject_info[cls.course]["year"] : "-",
-				lec_partner : cls.lec_partner,
-				academic_year: selectedAcademicYear,
-				semester: selectedSemester
-			}));
-			
-			const { data, error } = await supabase
-				.from('classes')
-				.insert(dataToInsert);
-			
-			if (error) {
-			console.error("Error inserting new data:", error);
-			throw error;
-			}
-			
-			console.log("Successfully replaced data:", data);
-			currentAnalysis = []
-			demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
-			await recomputeDemandAnalysis();
-			update = !update;
-			hasUploadedFile = false;
-			classes = [];
+            await insertData();
 		} catch (err) {
 			console.error("Error in replaceData:", err);
 			alert("Error replacing data: " + err.message);
@@ -425,6 +582,7 @@
 		hasUploadedDemandFile[selectedSchedule] = false;
 
 		recomputeDemandAnalysis();
+        fetchExamDates();
 		update = !update;
 	}
 
@@ -435,7 +593,7 @@
 		// demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
 		recomputeDemandAnalysis()
 		// hasUploadedDemandFile[] = false
-		if (hasUploadedFile) {
+		if (hasUploadedFile && viewMode === 'Schedule') {
 			const fileInput = document.getElementById('fileInput');
 			if (fileInput && fileInput.files[0]) {
 				parseCSV(fileInput.files[0], schedule);
@@ -454,14 +612,9 @@
 		hasUploadedDemandFile[selectedSchedule] = false;
 
 		recomputeDemandAnalysis();
+        fetchExamDates();
 		update = !update;
 	}
-
-	// const toggleModal = () => {
-	// 	showModal = true;
-	// 	modalUpdate = !modalUpdate
-	// 	console.log(modalUpdate);
-	// };
 
 	async function handleUpload(event) {
 		const file = event.target.files[0];
@@ -1157,7 +1310,7 @@
 		}
 
 		const tbody = document.querySelector('tbody');
-			if (!tbody.contains(event.target)) {
+			if (tbody && !tbody.contains(event.target)) {
 				console.log('Clicked outside tbody');
 				editingCell = null;
 			}
@@ -1174,9 +1327,41 @@
 		if (!error && data) instructors = data;
 	}
 
+    // --- NEW: SESSION MEMORY MANAGER & KEYBOARD ESCAPE ---
 	// @: Archive Module - Added fetching of academic years
 	onMount(async () => {
+        let urlOverrides = false;
+        if (browser) {
+            // Check URL for Router Jump
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('mode') === 'Exam') {
+                viewMode = 'Exam';
+                selectedExamType = params.get('type') || 'Midterm';
+                if (params.get('sem')) selectedSemester = params.get('sem');
+                if (params.get('ay')) selectedAcademicYear = params.get('ay');
+                if (params.get('date')) selectedExamDate = params.get('date');
+                urlOverrides = true;
+                window.history.replaceState({}, '', '/data');
+            } else {
+                // Restore from Session Memory!
+                if (sessionStorage.getItem('data_ay')) selectedAcademicYear = sessionStorage.getItem('data_ay');
+                if (sessionStorage.getItem('data_sem')) selectedSemester = sessionStorage.getItem('data_sem');
+                if (sessionStorage.getItem('data_sched')) selectedSchedule = sessionStorage.getItem('data_sched');
+                if (sessionStorage.getItem('data_mode')) viewMode = sessionStorage.getItem('data_mode');
+                if (sessionStorage.getItem('data_examtype')) selectedExamType = sessionStorage.getItem('data_examtype');
+                if (sessionStorage.getItem('data_examdate')) selectedExamDate = sessionStorage.getItem('data_examdate');
+            }
+        }
+
 		await fetchAcademicYears();
+        
+        if (urlOverrides) {
+            recomputeDemandAnalysis();
+            await fetchExamDates();
+            if (selectedExamDate && !examDates.includes(selectedExamDate)) {
+                examDates = [...examDates, selectedExamDate].sort();
+            }
+        }
 
 		await fetchInstructorsForModal();
 
@@ -1186,6 +1371,29 @@
 		document.addEventListener('click', handleClickOutside);
 		return () => document.removeEventListener('click', handleClickOutside);
 	});
+
+    $effect(() => {
+        if (browser) {
+            sessionStorage.setItem('data_ay', selectedAcademicYear);
+            sessionStorage.setItem('data_sem', selectedSemester);
+            sessionStorage.setItem('data_sched', selectedSchedule);
+            sessionStorage.setItem('data_mode', viewMode);
+            sessionStorage.setItem('data_examtype', selectedExamType);
+            sessionStorage.setItem('data_examdate', selectedExamDate);
+        }
+    });
+
+    // Handle Keyboard Actions
+    function handleKeydown(event) {
+        if (event.key === 'Escape') {
+            showModal = false;
+            showDeleteModal = false;
+            showAddExamDateModal = false;
+            showEditExamDateModal = false;
+            modalUpdate = !modalUpdate;
+            modalDeleteUpdate = !modalDeleteUpdate;
+        }
+    }
 
 
 	// -------------- Modal Functions -------------
@@ -1206,44 +1414,6 @@
 
 
 		let submit = $state(false);
-
-		async function handleSubmit(event) {
-			event.preventDefault();
-
-			console.log("IM SUBMITTING")
-
-			// showModal = false;
-			// if(newDays == ""){
-			// 	acts.add({mode: 'danger' , message: '⚠ Cannot add class with no days.'})
-			// 	console.log("did it work?")
-			// }
-			// if(newSched == null || newSched == ""){
-			// 	acts.add({mode: 'danger' , message: '⚠ Cannot add class with no schedule.'})
-			// 	console.log("did it work?")
-			// }
-			// else{
-			// 	modalUpdate = !modalUpdate;
-			// 	submit = true;
-			// 	for (let i = 0; i < 7; i++) {
-			// 		if (daysArray[i] == true) {
-			// 			newDays.concat(days[i]);
-			// 		}
-			// 	}
-			// }
-			// update = true;
-
-			if (daysArray.length === 0) {
-				acts.add({mode: 'danger' , message: '⚠ Cannot add class with no days.'})
-				return;
-			}
-			if(!newSched) {
-				acts.add({mode: 'danger' , message: '⚠ Cannot add class with no schedule.'})
-				return;
-			}
-
-			submit = true;
-			await sendData();
-		}
 
 		// async function handleSubmitEnd() {
 		// 	console.log("HandelSubmitEnd Called")
@@ -1298,94 +1468,81 @@
 			return { hasConflict: false };
 		}
 
-		async function sendData() {
-			console.log("IM INSERTING")
-			newDays = daysArray.join(',');
+        // --- UPDATED SEND DATA FOR DUAL TARGETING ---
+        async function sendData() {
+            submit = true;
 
-			// if(newDays == ""){
-			// 	newDays = null
-			// }
+            if (viewMode === 'Exam') {
+                if (!selectedExamDate) { acts.add({mode: 'danger', message: '⚠️ Please select or create an Exam Date first.'}); submit = false; return; }
+                if (!newStart || !newEnd || !newLoc) { acts.add({mode: 'danger', message: '⚠️ Time and location are required.'}); submit = false; return; }
 
-			var year_level = '-';
-			var teaching_load = 0;
-			if(subject_info[newCourse]){
-				// set year level of class
-				year_level = subject_info[newCourse]["year"];
+                const newExamData = {
+                    course: newCourse, type: selectedExamType, class_id: newClass, instructor: newInstr,
+                    start_time: newStart, end_time: newEnd, location: newLoc, date: selectedExamDate,
+                    year: subject_info[newCourse] ? subject_info[newCourse]["year"] : "-",
+                    size: getVenueCapacity(newLoc), academic_year: selectedAcademicYear, semester: selectedSemester
+                };
 
-				// set teaching load
-				if(newType == "Lec"){
-					teaching_load = subject_info[newCourse]["lecTL"];
-				} else {
-					if(subject_info[newCourse]["labTL"]){
-						teaching_load = subject_info[newCourse]["labTL"];
-					}
-				}
-				// set units
-			}
-			
-			// @fix:conflict-logic
-			// Package new class data
-			const newClassData = {
-				course: newCourse,
-				type: newType,
-				class_id: newClass,
-				instructor: newInstr,
-				start_time: newStart,
-				end_time: newEnd,
-				location: newLoc,
-				days: newDays,
-				schedule: newSched,
-				year: year_level,
-				lec_partner: newLecPartner,
-				academic_year: selectedAcademicYear,
-				semester: selectedSemester // @: Archive Module - Save class with selected semester
-			};
+                const { error } = await supabase.from('exam_schedules').insert([newExamData]);
+                if (error) { toast.error("Insertion failed: " + error.message); submit = false; return; }
 
-			// @fix:conflict-logic
-			// Run Conflict Check
-			const conflictCheck = checkConflict(newClassData, classesValue || []);
-			if (conflictCheck.hasConflict) {
-				acts.add({mode: 'danger', message: `⚠ ${conflictCheck.reason}`});
-				submit = false;
-				update = false;
-				return null; // Stop insertion
-			}
+                toast.success("Exam added successfully!");
+            } else {
+                // REGULAR CLASS LOGIC
+                if (daysArray.length === 0) { acts.add({mode: 'danger', message: '⚠️ Cannot add class with no days.'}); submit = false; return; }
+                if (!newSched) { acts.add({mode: 'danger', message: '⚠️ Cannot add class with no schedule.'}); submit = false; return; }
+                newDays = daysArray.join(',');
 
-			const { data, error } = await supabase.from('classes').insert([newClassData]);
-			if (error) {
-				toast.error("Insertion failed: " + error.message);
-				submit = false;
-				return;
-			}
+                var year_level = '-'; var teaching_load = 0;
+                if(subject_info[newCourse]){
+                    year_level = subject_info[newCourse]["year"];
+                    if(newType == "Lec"){ teaching_load = subject_info[newCourse]["lecTL"]; } 
+                    else { if(subject_info[newCourse]["labTL"]){ teaching_load = subject_info[newCourse]["labTL"]; } }
+                }
 
-			toast.success("Class added successfully!");
+                // @fix:conflict-logic
+			    // Package new class data
+                const newClassData = {
+                    course: newCourse, type: newType, class_id: newClass, instructor: newInstr,
+                    start_time: newStart, end_time: newEnd, location: newLoc, days: newDays,
+                    schedule: newSched, year: year_level, lec_partner: newLecPartner,
+                    academic_year: selectedAcademicYear, semester: selectedSemester
+                };
 
-			// Clear inputs
-			newCourse = '';
-			newClass = '';
-			daysArray = [];
-			newDays = '';
-			newInstr = 'TBA';
-			newLecPartner = '';
+                // @fix:conflict-logic
+			    // Run Conflict Check
+                const conflictCheck = checkConflict(newClassData, classesValue || []);
+                if (conflictCheck.hasConflict) {
+                    acts.add({mode: 'danger', message: `⚠ ${conflictCheck.reason}`});
+                    submit = false;
+                    update = false;
+                    return null; // Stop insertion
+                }
 
-			console.log(newDays);
+                const { error } = await supabase.from('classes').insert([newClassData]);
+                if (error) { toast.error("Insertion failed: " + error.message); submit = false; return; }
+                toast.success("Class added successfully!");
+            }
 
-			submit = false;
-			showModal = false;
-			modalUpdate = !modalUpdate;
+            // Clear inputs
+            newCourse = ''; newClass = ''; daysArray = []; newDays = ''; newInstr = 'TBA'; newLecPartner = ''; selectedEligibleClass = "";
+            submit = false; showModal = false; modalUpdate = !modalUpdate;
+            
+            if (viewMode === 'Schedule') {
+                currentAnalysis = []
+			    demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
+			    await recomputeDemandAnalysis()
+            }
+            update = !update;
+        }
 
-			currentAnalysis = []
-			demandData[selectedSchedule] = {rawDemand: [], analysis: {}}
-
-			// hasUploadedDemandFile[selectedSchedule] = false
-			await recomputeDemandAnalysis()
-
-			update = !update;
-			return data;
-
-		}
-
-		const toggleModal = () => {
+		const toggleModal = async () => {
+            if (viewMode === 'Exam') {
+                await fetchEligibleClasses();
+                selectedEligibleClass = ""; 
+                newCourse = "";
+                newClass = "";
+            }
 			showModal = true;
 			modalUpdate = !modalUpdate;
 			console.log("THIS IS THE MODAL")
@@ -1409,8 +1566,9 @@
 
 		const deleteClassFinal = async () => {
 		try {
+            const targetTable = viewMode === 'Exam' ? 'exam_schedules' : 'classes';
 			const { error } = await supabase
-				.from('classes')
+				.from(targetTable)
 				.delete()
 				.eq('id', deleteClassID);
 				
@@ -1463,12 +1621,14 @@
 			else{
 				searchSection = searchValue
 			}
-			return searchCourse, searchSection
+			return [searchCourse, searchSection];
 
 		}
 		
 // --- HTML PORTION STARTS HERE --- \\
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 	<div>
 		{#key classesValue}
@@ -1491,7 +1651,6 @@
 			<div class ="flex flex-row gap-10">
 				<h1 class="text-3xl font-bold text-gray-800">Class Schedule</h1>
 				
-				<!-- @: Archive Module - Added AcademicYear -->
 				<div class="flex flex-wrap items-center gap-2">
 					<select
 						bind:value={selectedAcademicYear}
@@ -1522,19 +1681,65 @@
 				
 			</div>
 
-			<!-- Download CSVs -->
+			{#if viewMode === 'Schedule'}
 			<button 
 				class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
 				onclick={downloadCSV}
 				>
 				Export CSV
 			</button>
+            {/if}
 		</div>
 
-		<!-- Upload and Quick Numbers -->
+        <div class="flex flex-wrap gap-2 mb-6 items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm w-fit">
+            {#each schedules as schedule}
+                <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Schedule' && selectedSchedule === schedule ? 'bg-green-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setScheduleView(schedule)}>
+                    Schedule {schedule}
+                </button>
+            {/each}
+            
+            <div class="w-px h-8 bg-gray-300 mx-2"></div>
+            
+            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' && selectedExamType === 'Midterm' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setExamView('Midterm')}>
+                Midterms
+            </button>
+            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' && selectedExamType === 'Final' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setExamView('Final')}>
+                Finals
+            </button>
+        </div>
+
+        {#if viewMode === 'Exam'}
+        <div class="flex flex-wrap gap-2 mb-6 items-center bg-gray-100 p-3 rounded-lg border border-gray-200 shadow-sm transition-all">
+            <span class="text-sm font-bold text-gray-600 mr-2 uppercase tracking-wide"><i class="fa-solid fa-calendar-day mr-1"></i> Exam Dates:</span>
+            
+            {#if examDates.length === 0}
+                <span class="text-sm text-gray-400 italic">No dates scheduled yet.</span>
+            {/if}
+            
+            {#each examDates as date}
+                <button class="px-3 py-1.5 rounded-md text-sm font-bold transition-all {selectedExamDate === date ? 'bg-green-600 text-white shadow-md scale-105 ring-2 ring-green-300' : 'bg-white text-green-700 hover:bg-green-50 border border-gray-300'}" onclick={() => { selectedExamDate = date; update = !update; }}>
+                    {formatReadableDate(date)}
+                </button>
+            {/each}
+            
+            <button class="px-3 py-1.5 rounded-md text-sm font-bold bg-white text-green-600 hover:bg-green-50 border border-green-300 ml-auto flex items-center gap-2 shadow-sm" onclick={() => showAddExamDateModal = true}>
+                <i class="fa-solid fa-plus"></i> Add Date
+            </button>
+
+            {#if selectedExamDate}
+            <button class="px-3 py-1.5 rounded-md text-sm font-bold bg-white text-green-600 hover:bg-green-50 border border-green-300 ml-2 flex items-center gap-2 shadow-sm" onclick={openEditDateModal}>
+                <i class="fa-solid fa-pen"></i> Edit Date
+            </button>
+            <button class="px-3 py-1.5 rounded-md text-sm font-bold bg-white text-red-600 hover:bg-red-50 border border-red-300 flex items-center gap-2 shadow-sm" onclick={deleteExamDate}>
+                <i class="fa-solid fa-trash-can"></i> Delete Date
+            </button>
+            {/if}
+        </div>
+        {/if}
+
+        {#if viewMode === 'Schedule'}
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
 
-			<!-- Quick Numbers Section -->
 			{#key update}
 			<div class="bg-white rounded-lg shadow p-4 border border-gray-200 flex flex-col gap-2">
 				<div class = "flex flex-row justify-between">
@@ -1581,8 +1786,7 @@
 											<div class="relative">
 												<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
 											</div>
-												<!-- <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> -->
-											{/if}
+												{/if}
 											<div>
 												{analysis[0]}
 											</div>
@@ -1605,7 +1809,6 @@
 			</div>
 			{/key}
 			
-			<!-- Upload Class CSV Section -->
 			<div class="bg-white rounded-lg shadow p-4 border border-gray-200">
 				<h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Schedule</h2>
 				{#if !hasUploadedFile}
@@ -1679,7 +1882,6 @@
 				{/if}
 			</div>
 
-			<!-- Upload Demand CSV Section -->
 			<div class="bg-white rounded-lg shadow p-4 border border-gray-200">
 				<h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Student Demand</h2>
 				{#key update}
@@ -1736,8 +1938,36 @@
 				{/key}
 			</div>
 		</div>
+        {:else if viewMode === 'Exam'}
+        <div class="bg-white rounded-lg shadow p-4 border border-gray-200">
+				<h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Schedule CSV</h2>
+				{#if !hasUploadedFile}
+					<div class="flex flex-col items-center bg-gray-50 border border-dashed border-gray-300 rounded p-4">
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+						<p class="text-sm font-bold text-gray-700 mb-1 text-center">Upload Schedule CSV</p>
+                        <p class="text-xs text-gray-500 mb-3 text-center">Format: Course, Type, Section, Day, Time, Room, Instructor</p>
+						<button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer text-sm flex items-center gap-1" onclick={openFileUpload}><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg> Upload File </button>
+						<input type="file" id="fileInput" accept=".csv" onchange={handleUpload} class="hidden" bind:this={fileInputRef} >
+					</div>
+				{:else}
+					<div class="bg-gray-50 rounded border border-gray-200 p-3 mb-3">
+						<div class="flex items-center gap-2">
+							<div class="bg-green-100 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
+							<div class="flex-1 truncate">
+								<p class="text-sm font-medium text-gray-900 truncate"> {document.getElementById('fileInput')?.files[0]?.name || 'classes.csv'} </p>
+								<p class="text-xs text-gray-500 text-center">{classes.length} classes pending</p>
+							</div>
+							<button onclick={() => { hasUploadedFile = false; classes = []; document.getElementById('fileInput').value = ''; }} class="text-gray-400 hover:text-gray-500" aria-label="cancel"> <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg> </button>
+						</div>
+					</div>
+					<div class="flex gap-2">
+						<button onclick={insertData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Add to Schedule </button>
+						<button onclick={replaceData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Replace Entire Schedule </button>
+					</div>
+				{/if}
+			</div>
+        {/if}
 
-		<!-- Search and Controls -->
 		<div class="flex flex-wrap gap-3 mb-4">
 			<div class="flex-1 min-w-[200px] relative">
 				<input 
@@ -1750,39 +1980,24 @@
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
 				</svg>
 			</div>
-			<!-- <button class="px-4 py-2 border border-gray-300 rounded-lg flex items-center gap-2 bg-white">
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-				</svg>
-				Filters
-			</button> -->
-			<SortAndFilterDropdownButton  onSort={handleSort}/>
-			<button
-				class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-				onclick={toggleModal}
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-				</svg>
-				Add Class
-			</button>
-
 			
+			<SortAndFilterDropdownButton  onSort={handleSort}/>
+			
+            <button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition" onclick={toggleModal}>
+                <i class="fa-solid fa-plus"></i>
+                {viewMode === 'Exam' ? 'Add Exam Block' : 'Add Class'}
+            </button>
 		</div>
 
-		<!-- Schedule Tabs -->
-		<div class="flex flex-wrap gap-2 mb-4">
-			{#each schedules as schedule}
-			<button 
-				class="px-4 py-2 rounded-lg font-medium transition-colors {selectedSchedule === schedule ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
-				onclick={() => handleScheduleChange(schedule)}
-			>
-				Schedule {schedule}
-			</button>
-			{/each}
-		</div>
-
-		<!-- Classes Table -->
+		{#if viewMode === 'Exam' && !selectedExamDate}
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-12 mt-6 flex flex-col items-center justify-center text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <h3 class="text-xl font-bold text-gray-700 mb-2">No Exam Date Selected</h3>
+                <p class="text-gray-500 max-w-md">You haven't selected a date for the {selectedExamType}s yet. Click the "Add Date" button above to start scheduling exams.</p>
+            </div>
+        {:else}
 		<div>
 		{#key update}
 				<Classes 
@@ -1794,40 +2009,114 @@
 					semester = {selectedSemester}
 					academicYear={selectedAcademicYear}
 					onToggleDeleteModal= {toggleDeleteModal}
-					searchCourse, searchSection = {handleSearch()}
+					searchCourse={handleSearch()[0]} 
+                    searchSection={handleSearch()[1]}
+                    isExamMode={viewMode === 'Exam'}
+                    examDate={selectedExamDate}
+                    examType={selectedExamType}
 				/>
 		{/key}
 		</div>
+        {/if}
 	</div>
 	</div>
 
-	<!-- -------------------------------------------------------- -->
-	<!-- The Modal for adding a class -->
-	<!-- -------------------------------------------------------- -->
+{#if showAddExamDateModal}
+<div class="backdrop z-100">
+    <div class="delete-modal z-200" use:tapOutside={() => showAddExamDateModal = false}>
+        <h3 class="title2 mb-4 font-bold text-gray-800">Add New Exam Date</h3>
+        <p class="text-sm text-gray-600 mb-2">Select a date for this {selectedExamType} period.</p>
+        <input type="date" bind:value={newExamDateInput} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none mb-4">
+        
+        <div class="flex justify-end gap-2">
+            <button class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg" onclick={() => showAddExamDateModal = false}>Cancel</button>
+            <button class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg" onclick={addExamDate}>Add Date</button>
+        </div>
+    </div>
+</div>
+{/if}
+
+{#if showEditExamDateModal}
+<div class="backdrop z-100">
+    <div class="delete-modal z-200" use:tapOutside={() => showEditExamDateModal = false}>
+        <h3 class="title2 mb-4 font-bold text-gray-800">Edit Exam Date</h3>
+        <p class="text-sm text-gray-600 mb-2">Move all exams from {formatReadableDate(selectedExamDate)} to a new date.</p>
+        <input type="date" bind:value={editExamDateInput} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none mb-4">
+        
+        <div class="flex justify-end gap-2">
+            <button class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg" onclick={() => showEditExamDateModal = false}>Cancel</button>
+            <button class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg" onclick={editExamDate}>Save Changes</button>
+        </div>
+    </div>
+</div>
+{/if}
+
 	{#key modalUpdate}
-	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (because of reasons) -->
-	{#if modalUpdate}
-	<div class="backdrop z-100">
-		<div class="modal z-200" use:tapOutside={(e) => clickOutModal()}>
-			<h1 class="title1">Add a New Class</h1>
-			<form onsubmit={handleSubmit} name="add class">
+	{#if showModal}
+	<div class="backdrop z-[100]">
+		<div class="modal z-[200] max-h-[90vh] overflow-y-auto" use:tapOutside={(e) => clickOutModal()}>
+			<h1 class="title1 mb-6 text-gray-800">{viewMode === 'Exam' ? 'Schedule Exam Block' : 'Add a New Class'}</h1>
+            
+            {#if viewMode === 'Exam'}
+            <div class="mb-4 bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm flex justify-between items-center">
+                <p class="text-sm text-green-800"><i class="fa-solid fa-circle-info mr-2"></i>You are scheduling a <strong>{selectedExamType}</strong> on <strong>{formatReadableDate(selectedExamDate)}</strong>.</p>
+            </div>
+            {/if}
+            
+			<form onsubmit={(e) => { e.preventDefault(); sendData(); }} name="add class">
 				<div class="form_total gap-3">
-					<div class="form-row">
-						<div class="center_col">
-							<div class="form-col gap-2">
+					
+                    <div class="form-row">
+                        {#if viewMode === 'Exam'}
+                        <div class="grid grid-cols-1 gap-4">
+                            <div class="form-col gap-1">
+                                <label for="select-class" class="title2 text-gray-700">Select Class for Exam</label>
+                                <select id="select-class" bind:value={selectedEligibleClass} onchange={() => {
+                                    if (selectedEligibleClass) {
+                                        const parsed = JSON.parse(selectedEligibleClass);
+                                        newCourse = parsed.course;
+                                        newClass = parsed.class_id;
+                                        newInstr = parsed.instructor || 'TBA';
+                                    } else {
+                                        newCourse = '';
+                                        newClass = '';
+                                        newInstr = 'TBA';
+                                    }
+                                }} class="w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5" required>
+                                    <option value="">-- Choose a Scheduled Class --</option>
+                                    {#each eligibleExamClasses as cls}
+                                        <option value={JSON.stringify(cls)}>{cls.course} {cls.class_id} (Draft {cls.schedule})</option>
+                                    {/each}
+                                </select>
+                            </div>
+                        </div>
+                        {:else}
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+							<div class="form-col gap-1">
 								<label for="class name" class="title2">Course</label>
 								<input
 									id="class name"
 									type="text"
 									placeholder="Course"
-									class = "block bg-gray-200 rounded-lg p-2.5"
+									class = "w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5"
 									required
 									bind:value={newCourse}
 								/>
 							</div>
-							<div class="form-col gap-2">
+                            <div class="form-col gap-1">
+								<label for="class id" class="title2">Section</label>
+								<input 
+									id="classID" 
+									type="text" 
+									placeholder="Section" 
+									bind:value={newClass} 
+									class = "w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5"
+									required
+								/>
+							</div>
+							<div class="form-col gap-1">
 								<label for="type" class="title2">Type</label>
-								<select bind:value={newType} class ="block bg-gray-200 rounded-lg p-2.5">
+								<select bind:value={newType} class ="w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5">
 									{#if labSubjects.includes(newCourse)}
 										<option value = "Lec">Lec</option>
 										<option value = "Lab">Lab</option>
@@ -1836,34 +2125,24 @@
 									{/if}
 								</select>
 							</div>
-							<div class="form-col gap-2">
-								<label for="class id" class="title2">Class ID</label>
-								<input 
-									id="classID" 
-									type="text" 
-									placeholder="Class ID" 
-									bind:value={newClass} 
-									class = "bg-gray-200 rounded-lg p-2.5"
-									required
-								/>
-							</div>
 						</div>
+                        {/if}
 					</div>
 
 					<div class="form-row">
-						<div class="center_col">
-							<div class="form-col gap-2">
-								<label for="instructor" class="title2">Instructor Name</label>
-								<select bind:value={newInstr} class = "bg-gray-200 rounded-lg p-2.5">
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<div class="form-col gap-1">
+								<label for="instructor" class="title2">{viewMode === 'Exam' ? 'Proctor' : 'Instructor Name'}</label>
+								<select bind:value={newInstr} class = "w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5">
 									<option value = "TBA"> TBA </option>
 									{#each instructors as instr}
 										<option value = {instr.name}>{instr.name}</option>
 									{/each}
 								</select>
 							</div>
-							<div class="form-col gap-2">
+							<div class="form-col gap-1">
 								<label for="location" class="title2">Location</label>
-								<select bind:value={newLoc} class = "bg-gray-200 rounded-lg p-2.5">
+								<select bind:value={newLoc} class = "w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5">
 									{#each rooms as room}
 										<option value = {room.name}>{room.name}</option>
 									{/each}
@@ -1872,10 +2151,10 @@
 						</div>
 					</div>
 					<div class="form-row">
-						<div class="center_col">
-							<div class="form-col gap-2">
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<div class="form-col gap-1">
 								<label for="start" class="title2">Start Time</label>
-								<select bind:value={newStart} class = "bg-gray-200 rounded-lg p-2.5">
+								<select bind:value={newStart} class = "w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5">
 									<option value="07:00"> 7:00 AM </option>
 									<option value="07:15"> 7:15 AM </option>
 									<option value="07:30"> 7:30 AM </option>
@@ -1927,9 +2206,9 @@
 									<option value="19:00"> 7:00 PM </option>
 								</select>
 							</div>
-							<div class="form-col gap-2">
+							<div class="form-col gap-1">
 								<label for="end" class="title2">End Time</label>
-								<select bind:value={newEnd} class = "bg-gray-200 rounded-lg p-2.5">
+								<select bind:value={newEnd} class = "w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2.5">
 									<option value="07:00"> 7:00 AM </option>
 									<option value="07:15"> 7:15 AM </option>
 									<option value="07:30"> 7:30 AM </option>
@@ -1991,39 +2270,38 @@
 							</div>
 						</div>
 					</div>
+                    
+                    {#if viewMode === 'Schedule'}
 					<div class="form-row">
-						<div class="form-col gap-2">
+						<div class="form-col gap-1">
 							<div class = "title2"><label for="days">Days</label></div>
-							<div class="flex flex-wrap gap-2 mt-2">
+							<div class="flex flex-wrap gap-3 mt-2">
 								{#each days as day}
-									<label class="flex items-center p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200">
-										<input type="checkbox" bind:group={daysArray} value={day} class="mr-2" />
-										<span>{day}</span>
+									<label class="flex items-center p-2 bg-gray-100 border border-gray-200 rounded cursor-pointer hover:bg-gray-200 transition">
+										<input type="checkbox" bind:group={daysArray} value={day} class="mr-2 w-4 h-4 text-green-600 focus:ring-green-500 rounded border-gray-300" />
+										<span class="font-medium text-gray-700">{day}</span>
 									</label>
 								{/each}
 							</div>
 						</div>
 					</div>
 
-					<div class="flex flex-row form-row gap-4">
+					<div class="flex flex-row form-row gap-6 mt-4">
 						<div class="form-col">
-							<div class = "title2"><label for="schedule" >Schedule #</label></div>
-							<div class="new-row">
-								<div>
-									<input class="cont" type="radio" name="sched" bind:group={newSched} value = "1"/> 
-										1
-									<br />
-								</div>
-								<div>
-									<input class="cont" type="radio" name="sched" bind:group={newSched} value = "2"/>
-										2
-									<br />
-								</div>
-								<div>
-									<input class="cont" type="radio" name="sched" bind:group={newSched} value = "3"/>
-										3
-									<br />
-								</div>
+							<div class = "title2 mb-2"><label for="schedule" >Schedule #</label></div>
+							<div class="flex gap-4">
+								<label class="flex items-center gap-2 cursor-pointer">
+									<input type="radio" name="sched" bind:group={newSched} value="1" class="w-4 h-4 text-green-600 focus:ring-green-500"/> 
+									<span class="font-bold">Draft 1</span>
+								</label>
+								<label class="flex items-center gap-2 cursor-pointer">
+									<input type="radio" name="sched" bind:group={newSched} value="2" class="w-4 h-4 text-green-600 focus:ring-green-500"/>
+									<span class="font-bold">Draft 2</span>
+								</label>
+								<label class="flex items-center gap-2 cursor-pointer">
+									<input type="radio" name="sched" bind:group={newSched} value="3" class="w-4 h-4 text-green-600 focus:ring-green-500"/>
+									<span class="font-bold">Draft 3</span>
+								</label>
 							</div>
 						</div>
 						{#key newType}
@@ -2034,30 +2312,35 @@
 								id="class name"
 								type="text"
 								placeholder="Lecture Partner ID"
-								class = "block bg-gray-200 rounded-lg p-2.5"
+								class = "w-full bg-gray-100 border border-gray-300 focus:border-green-500 rounded-lg p-2"
 								bind:value={newLecPartner}
 							/>
 						</div>
 						{/if}
 						{/key}
 					</div>
+                    {/if}
+
 				</div>
-				<button class="submit-btn cursor-pointer" type="submit" disabled={submit}>
-					{submit ? 'Submitting...' : 'Submit'}
-				</button>
+				<div class="mt-8 flex justify-end gap-3 border-t border-gray-200 pt-6">
+                    <button type="button" class="px-5 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold transition" onclick={() => showModal = false}>Cancel</button>
+                    <button class="px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold transition shadow-md disabled:opacity-50" type="submit" disabled={submit}>
+                        {submit ? 'Saving...' : (viewMode === 'Exam' ? 'Save Exam' : 'Save Class')}
+                    </button>
+                </div>
 		</form> </div>
 	</div>
 	{/if}
 	{/key}
 
 	{#key modalDeleteUpdate}
-		{#if modalDeleteUpdate}
-		<div class="backdrop z-100">
+		{#if showDeleteModal}
+		<div class="delete-modal-backdrop">
 			<div class="delete-modal z-200" use:tapOutside={(e) => clickOutDeleteModal()}>
-				<h3 class="title2">Are you sure to delete {deleteClassCourse} {deleteClassSection}?</h3>
+				<h3 class="title2 text-gray-800">Are you sure to delete <span class="text-red-600">{deleteClassCourse} {deleteClassSection}</span>?</h3>
 				<div class="flex">
 					<button
-						class="ml-auto my-6 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+						class="ml-auto mt-6 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold shadow-sm transition"
 						onclick={handleDeleteSubmitEnd}
 					>
 						Delete
@@ -2068,27 +2351,10 @@
 		{/if}
 	{/key}
 
-	<!-- <div>
-		{#if submit}
-			{#await sendData()}
-				<p class="text-white">Sending data...</p>
-			{:then data}
-				<p class="text-white">Successfully sent data.</p>
-			{:catch error}
-				<p>Something went wrong while sending the data:</p>
-				<pre>{error}</pre>
-			{/await}
-		{/if}
-	</div> -->
-
 	<style>
 		:global(body) {
 			background-color: #f9fafb;
 		}
-		/* .to_focus{
-			--tw-ring-color: rgba(16, 185, 129, var(--tw-ring-opacity));
-			border-color: var(--color-green-500);
-		} */
 		.cont {
 			display: inline;
 			gap: 10px;
@@ -2101,37 +2367,40 @@
 		}
 		.title2{
 			text-align: left;
-			font-size: 1.25rem;
+			font-size: 1.1rem;
 			font-weight: 600;
+            margin-bottom: 0.25rem;
 		}
 		.backdrop {
 			width: 100%;
 			height: 100%;
 			position: fixed;
-			background: rgba(0, 0, 0, 0.8);
+            top: 0;
+            left: 0;
+			background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
 			overflow-y: auto;
 			z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
 		}
 		.modal {
-			/* text-align: center; */
-			padding: 5rem;
-			border-radius: 10px;
-			max-width: 60rem;
-			margin: 10% auto;
 			background: white;
-			/* justify-items: center; */
-			justify-content: space-between;
-			z-index: 150;
+            padding: 2.5rem;
+            border-radius: 1rem;
+            width: 90%;
+            max-width: 800px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            z-index: 150;
 		}
 
 		.delete-modal {
-			/* text-align: center; */
 			padding: 2rem;
 			border-radius: 10px;
 			max-width: 40rem;
 			margin: 5% auto;
 			background: white;
-			/* justify-items: center; */
 			justify-content: space-between;
 			z-index: 150;
 		}
@@ -2147,14 +2416,6 @@
 			place-items: center;
 			justify-content: space-between;
 		}
-		/* input[type='text'] {
-			width: 15rem;
-			background-color: rgb(243 244 246);
-			border-color: rgb(209 213 219);
-			border-radius: 0.25rem;
-			padding: 1rem;
-			margin-bottom: 0.5rem;
-		} */
 		.form-row {
 			padding-top: 10px;
 			width: 100%;
@@ -2163,38 +2424,14 @@
 			display: flex;
 			flex-direction: row;
 			gap: 50px;
-			/* background-color: aqua; */
 			flex-wrap:wrap;
 		}
 
-		input[type='checkbox'] {
-			-webkit-appearance:none;
-			width:15px;
-			height:15px;
-			background:white;
-			border-radius:5px;
-			border:2px solid #555;
-		}
-		input[type='checkbox']:checked {
-			background:green;
-		}
 		.form-col {
 			text-align: left;
 			display: flex;
 			flex-direction: column;
 			padding-top: 10px;
 			width: 100%;
-			/* margin-left: 2.5rem; */
-			margin-right: 2.5rem;
-		}
-		.submit-btn {
-			margin-top: 1.5rem;
-			background-color: green;
-			color: white;
-			padding-top: 0.625rem;
-			padding-bottom: 0.625rem;
-			padding-left: 1.5rem;
-			padding-right: 1.5rem;
-			border-radius: 0.625rem;
 		}
 	</style>

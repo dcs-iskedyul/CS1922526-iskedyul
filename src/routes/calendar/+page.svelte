@@ -4,6 +4,7 @@
     import { supabase } from "$lib/supabaseClient";
     import { onMount } from 'svelte';
     import { browser } from '$app/environment';
+    import { goto } from '$app/navigation'; // <-- NEW: Router imported
     
     let allTerms = $state([]);
     let availableYears = $state([]);
@@ -21,6 +22,7 @@
     let shortcutYear = $state("");
     let shortcutSem = $state("1");
     let venueClasses = $state([]);
+    let examVenueClasses = $state([]); 
     
     let showAddTermModal = $state(false);
     let newTermYear = $state("");
@@ -48,6 +50,9 @@
     let agendaItems = $state([]);
     let agendaIsFullDayOff = $state(false);
     let agendaHolidayEvent = $state(null); 
+    
+    let agendaIsExamDay = $state(false);
+    let agendaExamEvent = $state(null);
 
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -86,10 +91,8 @@
         const isAM = lower.includes('am');
         const clean = lower.replace(/[a-z\s]/g, '');
         let [h, m] = clean.split(':').map(Number);
-
         if (isNaN(h)) h = 0;
         if (isNaN(m)) m = 0;
-
         if (isPM && h < 12) h += 12;
         if (isAM && h === 12) h = 0;
         return h * 60 + m;
@@ -161,11 +164,16 @@
         let items = [];
         agendaIsFullDayOff = false;
         agendaHolidayEvent = null;
+        agendaIsExamDay = false;
+        agendaExamEvent = null;
 
         events.forEach(e => {
             if (e.type === 'holiday' || e.type === 'break') {
                 agendaIsFullDayOff = true;
-                agendaHolidayEvent = e; // Save the full event object
+                agendaHolidayEvent = e; 
+            } else if (e.type === 'exam') {
+                agendaIsExamDay = true;
+                agendaExamEvent = e;
             } else if (e.type !== 'cancellation') {
                 items.push({ ...e, isClass: false });
             }
@@ -182,6 +190,14 @@
         if (updatedDay) {
             openAgendaModal(updatedDay.fullDate, updatedDay.dayEvents, updatedDay.projectedClasses);
         }
+    }
+
+    // --- NEW: Router function to jump to specific Data tab! ---
+    function navigateToDataTab(examEvent) {
+        if (!examEvent) return;
+        const type = examEvent.title.includes('Midterm') ? 'Midterm' : 'Final';
+        const targetUrl = `/data?mode=Exam&type=${type}&date=${examEvent.date}&ay=${examEvent.academic_year}&sem=${examEvent.semester}`;
+        goto(targetUrl);
     }
 
     $effect(() => {
@@ -236,6 +252,11 @@
         const { data, error } = await query;
         if (error) console.error("Error fetching classes:", error);
         if (data) venueClasses = data;
+
+        let examQuery = supabase.from('exam_schedules').select('*');
+        if (room !== "All Venues") examQuery = examQuery.eq('location', room);
+        const { data: eData } = await examQuery;
+        if (eData) examVenueClasses = eData;
     }
 
     let viewedTerm = $derived.by(() => {
@@ -373,6 +394,10 @@
 
     async function confirmDeleteEvent(e, event) {
         if (e) e.stopPropagation();
+        if (event.type === 'exam') {
+            alert("To safely delete an entire Exam Date, please use the Data Tab.");
+            return;
+        }
         if (confirm(`Are you sure you want to delete this event: "${event.title}"?`)) {
             const { error } = await supabase.from('calendar_events').delete().eq('id', event.id);
             if (!error) { 
@@ -380,84 +405,6 @@
                 refreshAgendaModal(); 
             } else { alert("Failed to delete the event."); }
         }
-    }
-
-    function generatePreview() {
-        if (!exportStartDate || !exportEndDate) return alert("Please select both a Start and End date.");
-        let data = [];
-        let curr = new Date(exportStartDate);
-        let end = new Date(exportEndDate);
-
-        while (curr <= end) {
-            const dateStr = curr.toISOString().split('T')[0];
-            const activeTermForDay = allTerms.find(t => dateStr >= t.start_date && dateStr <= t.end_date);
-            
-            const dayEvents = allCalendarEvents.filter(e => {
-                const matchesVenue = selectedVenue === "All Venues" || e.venue === null || e.venue === selectedVenue;
-                const matchesSched = selectedSchedule === "All" || e.schedule === null || e.schedule === selectedSchedule;
-                if (!matchesVenue || !matchesSched) return false;
-                if (e.end_date) return dateStr >= e.date && dateStr <= e.end_date;
-                return dateStr === e.date;
-            });
-
-            const isFullDayOff = dayEvents.some(e => e.type === 'holiday' || e.type === 'break');
-            const cancellations = dayEvents.filter(e => e.type === 'cancellation');
-
-            if (activeTermForDay && venueClasses.length > 0 && !isFullDayOff) {
-                const targetDayIndex = curr.getDay(); 
-                let dayClasses = venueClasses.filter(c => 
-                    isClassOnDay(c.days, targetDayIndex) &&
-                    c.academic_year === activeTermForDay.academic_year &&
-                    c.semester === activeTermForDay.semester
-                );
-                
-                dayClasses.forEach(c => {
-                    const isCancelled = cancellations.some(cancelEvent => 
-                        cancelEvent.title === `${c.course} ${c.class_id}` && 
-                        (cancelEvent.venue === null || cancelEvent.venue === c.location)
-                    );
-                    
-                    if (!isCancelled) {
-                        data.push({ 
-                            date: dateStr, 
-                            course: `${c.course} ${c.class_id}`, 
-                            type: c.type, 
-                            time: `${displayTime(c.start_time)} - ${displayTime(c.end_time)}`,
-                            location: c.location
-                        });
-                    }
-                });
-            }
-            curr.setDate(curr.getDate() + 1);
-        }
-
-        data.sort((a, b) => {
-            if (a.date !== b.date) return a.date.localeCompare(b.date);
-            return parseTimeStr(a.time.split('-')[0]) - parseTimeStr(b.time.split('-')[0]);
-        });
-        
-        exportDataPreview = data;
-        showExportPreviewModal = true;
-    }
-
-    function downloadCSV() {
-        if (exportDataPreview.length === 0) return;
-        let csvContent = "Date,Course,Type,Time,Location\n";
-        exportDataPreview.forEach(row => {
-            const safeCourse = `"${row.course.replace(/"/g, '""')}"`;
-            const safeLocation = `"${row.location.replace(/"/g, '""')}"`;
-            csvContent += `${row.date},${safeCourse},${row.type},${row.time},${safeLocation}\n`;
-        });
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        const cleanVenue = selectedVenue.replace(/\s+/g, '_');
-        link.setAttribute("download", `iskedyul_${cleanVenue}_${exportStartDate}_to_${exportEndDate}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showExportPreviewModal = false;
     }
 
     let calendarDays = $derived.by(() => {
@@ -491,51 +438,55 @@
 
             const autoHol = autoHolidays.find(h => h.m === month + 1 && h.d === i);
             if (autoHol) {
-                eventsForThisDay.push({
-                    id: `auto-${year}-${month}-${i}`,
-                    type: 'holiday',
-                    title: autoHol.title,
-                    venue: null,
-                    schedule: null,
-                    start_time: null,
-                    end_time: null,
-                    is_auto: true
-                });
+                eventsForThisDay.push({ id: `auto-${year}-${month}-${i}`, type: 'holiday', title: autoHol.title, venue: null, schedule: null, start_time: null, end_time: null, is_auto: true });
             }
 
             const isFullDayOff = eventsForThisDay.some(e => e.type === 'holiday' || e.type === 'break');
-            const cancellations = eventsForThisDay.filter(e => e.type === 'cancellation');
-            const activeTermForDay = allTerms.find(t => dateStr >= t.start_date && dateStr <= t.end_date);
+            const isExamDay = eventsForThisDay.some(e => e.type === 'exam'); 
             
+            // --- NEW: Fix for "Wrong Date" out of bounds exams! ---
+            let activeTermForDay = allTerms.find(t => dateStr >= t.start_date && dateStr <= t.end_date);
+            const examEvent = eventsForThisDay.find(e => e.type === 'exam');
+            if (!activeTermForDay && examEvent) {
+                activeTermForDay = { academic_year: examEvent.academic_year, semester: examEvent.semester };
+            }
+            
+            const cancellations = eventsForThisDay.filter(e => e.type === 'cancellation');
             let dayClasses = [];
             
-            if (activeTermForDay && venueClasses.length > 0 && !isFullDayOff) {
-                const targetDayIndex = new Date(year, month, i).getDay();
-                let projected = venueClasses.filter(c => 
-                    isClassOnDay(c.days, targetDayIndex) &&
-                    c.academic_year === activeTermForDay.academic_year &&
-                    c.semester === activeTermForDay.semester
-                );
+            if (activeTermForDay && !isFullDayOff) {
                 
-                dayClasses = projected.map(c => {
-                    const isCancelled = cancellations.some(cancelEvent => 
-                        cancelEvent.title === `${c.course} ${c.class_id}` && 
-                        (cancelEvent.venue === null || cancelEvent.venue === c.location)
+                if (venueClasses.length > 0 && !isExamDay) {
+                    const targetDayIndex = new Date(year, month, i).getDay();
+                    let projected = venueClasses.filter(c => 
+                        isClassOnDay(c.days, targetDayIndex) &&
+                        c.academic_year === activeTermForDay.academic_year &&
+                        c.semester === activeTermForDay.semester
                     );
-                    return { ...c, isCancelled };
-                });
+                    
+                    dayClasses = projected.map(c => {
+                        const isCancelled = cancellations.some(cancelEvent => cancelEvent.title === `${c.course} ${c.class_id}` && (cancelEvent.venue === null || cancelEvent.venue === c.location));
+                        return { ...c, isCancelled };
+                    });
+                }
+
+                if (examVenueClasses.length > 0 && isExamDay) {
+                    let dayExams = examVenueClasses.filter(e => 
+                        e.date === dateStr &&
+                        e.academic_year === activeTermForDay.academic_year &&
+                        e.semester === activeTermForDay.semester
+                    ).map(e => ({ ...e, isCancelled: false, isExam: true })); 
+                    
+                    dayClasses = [...dayClasses, ...dayExams];
+                }
 
                 dayClasses.sort((a, b) => parseTimeStr(a.start_time) - parseTimeStr(b.start_time));
             }
 
             days.push({ 
-                day: i, 
-                fullDate: dateStr, 
-                isHighlighted: highlighted, 
-                projectedClasses: dayClasses,
+                day: i, fullDate: dateStr, isHighlighted: highlighted, projectedClasses: dayClasses,
                 dayEvents: eventsForThisDay.filter(e => e.type !== 'cancellation'), 
-                startOfTerms: allTerms.filter(t => t.start_date === dateStr),
-                endOfTerms: allTerms.filter(t => t.end_date === dateStr)
+                startOfTerms: allTerms.filter(t => t.start_date === dateStr), endOfTerms: allTerms.filter(t => t.end_date === dateStr)
             });
         }
         return days;
@@ -573,16 +524,12 @@
             <div class="flex flex-col items-end gap-2">
                 <div class="flex items-center gap-3">
                     <select bind:value={selectedSchedule} class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="1">Schedule 1</option>
-                        <option value="2">Schedule 2</option>
-                        <option value="3">Schedule 3</option>
+                        <option value="1">Schedule 1</option> <option value="2">Schedule 2</option> <option value="3">Schedule 3</option>
                     </select>
 
                     <select bind:value={selectedVenue} class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                         <option value="All Venues">All Venues</option>
-                        {#each rooms as room}
-                            <option value={room.name}>{room.name}</option>
-                        {/each}
+                        {#each rooms as room} <option value={room.name}>{room.name}</option> {/each}
                     </select>
                 </div>
             </div>
@@ -599,9 +546,7 @@
                             {#each availableYears as year} <option value={year}>{year}</option> {/each}
                         </select>
                         <select bind:value={shortcutSem} onchange={handleShortcutChange} class="text-sm font-bold text-gray-800 bg-transparent cursor-pointer hover:bg-gray-100 p-1 rounded focus:outline-none">
-                            <option value="1">1st Semester</option>
-                            <option value="2">2nd Semester</option>
-                            <option value="Midyear">Midyear</option>
+                            <option value="1">1st Semester</option> <option value="2">2nd Semester</option> <option value="Midyear">Midyear</option>
                         </select>
                     </div>
                     <button onclick={() => showAddTermModal = true} class="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2.5 rounded-lg border border-gray-200 shadow-sm transition" title="Add Full Academic Year">
@@ -620,15 +565,6 @@
                     <input type="number" value={currentYear} onchange={(e) => updateDate(currentMonth, parseInt(e.target.value))} class="always-show-spinners text-lg font-bold text-gray-800 bg-white border border-gray-300 shadow-sm p-1.5 rounded focus:outline-none w-24 text-center focus:ring-2 focus:ring-green-500" />
                     <div class="w-px h-6 bg-gray-300 mx-1"></div>
                     <button onclick={goToToday} class="px-4 py-1.5 text-sm font-bold text-gray-700 bg-white border border-gray-300 rounded shadow-sm hover:bg-gray-50 hover:text-black transition">Today</button>
-                </div>
-
-                <div class="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-200 shadow-sm">
-                    <input type="date" bind:value={exportStartDate} onchange={() => jumpToDate(exportStartDate)} class="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-green-500 bg-white">
-                    <span class="text-gray-400">to</span>
-                    <input type="date" bind:value={exportEndDate} onchange={() => jumpToDate(exportEndDate)} class="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-green-500 bg-white">
-                    <button onclick={generatePreview} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded font-medium shadow-sm flex items-center gap-2 transition-colors">
-                        <i class="fa-solid fa-file-export"></i> Export CSV
-                    </button>
                 </div>
             </div>
 
@@ -659,20 +595,18 @@
 
                             <div class="mt-2 flex flex-col gap-1 overflow-y-auto max-h-[90px] custom-scrollbar">
                                 {#each dayEvents as ev}
-                                    <div class="relative w-full text-left p-1.5 rounded border shadow-sm {ev.type === 'holiday' || ev.type === 'break' ? 'bg-red-100 border-red-300 text-red-900' : 'bg-yellow-50 border-yellow-300 text-yellow-900'} my-1 z-10 group/event">
+                                    <div class="relative w-full text-left p-1.5 rounded border shadow-sm {ev.type === 'holiday' || ev.type === 'break' ? 'bg-red-100 border-red-300 text-red-900' : ev.type === 'exam' ? 'bg-blue-100 border-blue-300 text-blue-900' : 'bg-yellow-50 border-yellow-300 text-yellow-900'} my-1 z-10 group/event">
                                         <div class="flex justify-between items-start">
                                             <div class="flex-1 min-w-0 pr-5">
                                                 <div class="text-[8px] uppercase font-extrabold opacity-75 flex items-center gap-1 mb-0.5">
                                                     {#if ev.is_auto} <i class="fa-solid fa-lock text-red-400 mr-0.5"></i> {/if}
-                                                    <i class="fa-solid {ev.type === 'holiday' ? 'fa-umbrella-beach' : 'fa-star'}"></i> {ev.type}
+                                                    <i class="fa-solid {ev.type === 'holiday' ? 'fa-umbrella-beach' : ev.type === 'exam' ? 'fa-file-pen' : 'fa-star'}"></i> {ev.type}
                                                 </div>
                                                 <div class="text-[10px] font-bold leading-tight break-words">{ev.title}</div>
-                                                {#if ev.start_time && ev.end_time}
-                                                    <div class="text-[9px] opacity-80 font-normal mt-0.5">{displayTime(ev.start_time)} - {displayTime(ev.end_time)}</div>
-                                                {/if}
+                                                {#if ev.start_time && ev.end_time} <div class="text-[9px] opacity-80 font-normal mt-0.5">{displayTime(ev.start_time)} - {displayTime(ev.end_time)}</div> {/if}
                                             </div>
                                         </div>
-                                        {#if !ev.is_auto}
+                                        {#if !ev.is_auto && ev.type !== 'exam'}
                                             <button onclick={(e) => confirmDeleteEvent(e, ev)} class="absolute top-1 right-1 opacity-0 group-hover/event:opacity-100 hover:bg-white/50 w-5 h-5 flex items-center justify-center rounded transition text-red-600" title="Delete Event">
                                                 <i class="fa-solid fa-trash-can text-xs"></i>
                                             </button>
@@ -681,15 +615,13 @@
                                 {/each}
 
                                 {#each projectedClasses as pClass}
-                                    <div class="text-[10px] leading-tight p-1.5 rounded border shadow-sm transition-all {pClass.isCancelled ? 'bg-gray-100 border-gray-300 text-gray-400 line-through' : pClass.type?.toLowerCase() === 'lec' ? 'bg-blue-50 border-blue-200 text-blue-800 hover:brightness-95' : 'bg-purple-50 border-purple-200 text-purple-800 hover:brightness-95'}">
+                                    <div class="text-[10px] leading-tight p-1.5 rounded border shadow-sm transition-all {pClass.isCancelled ? 'bg-gray-100 border-gray-300 text-gray-400 line-through' : pClass.isExam ? 'bg-blue-600 border-blue-700 text-white hover:brightness-110' : pClass.type?.toLowerCase() === 'lec' ? 'bg-blue-50 border-blue-200 text-blue-800 hover:brightness-95' : 'bg-purple-50 border-purple-200 text-purple-800 hover:brightness-95'}">
                                         <div class="font-bold truncate">{pClass.course} {pClass.class_id}</div>
-                                        <div class="text-gray-500 mt-0.5 {pClass.isCancelled ? 'line-through' : ''}">{displayTime(pClass.start_time)} - {displayTime(pClass.end_time)}</div>
+                                        <div class="{pClass.isExam ? 'text-blue-100' : 'text-gray-500'} mt-0.5 {pClass.isCancelled ? 'line-through' : ''}">{displayTime(pClass.start_time)} - {displayTime(pClass.end_time)}</div>
                                         {#if selectedVenue === "All Venues"}
-                                            <div class="text-gray-400 mt-0.5 truncate text-[8px] opacity-80 {pClass.isCancelled ? 'line-through' : ''}">{pClass.location}</div>
+                                            <div class="{pClass.isExam ? 'text-blue-200' : 'text-gray-400'} mt-0.5 truncate text-[8px] opacity-80 {pClass.isCancelled ? 'line-through' : ''}">{pClass.location}</div>
                                         {/if}
-                                        {#if pClass.isCancelled}
-                                            <div class="mt-1 text-[8px] font-bold text-red-600 uppercase bg-red-100 px-1 py-0.5 rounded w-max inline-block no-underline tracking-wider">Cancelled</div>
-                                        {/if}
+                                        {#if pClass.isCancelled} <div class="mt-1 text-[8px] font-bold text-red-600 uppercase bg-red-100 px-1 py-0.5 rounded w-max inline-block no-underline tracking-wider">Cancelled</div> {/if}
                                     </div>
                                 {/each}
                             </div>
@@ -709,16 +641,14 @@
                     <h2 class="text-3xl font-bold text-gray-800">Daily Timetable</h2>
                     <p class="text-gray-500 font-medium text-xl mt-1">{formatReadableDate(agendaDateStr)}</p>
                     <div class="mt-3 flex gap-2">
-                        <div class="inline-flex items-center bg-white border border-gray-200 px-3 py-1.5 rounded shadow-sm text-sm font-bold text-gray-700">
-                            <i class="fa-solid fa-door-open mr-2 text-gray-400"></i> {selectedVenue}
-                        </div>
-                        <div class="inline-flex items-center bg-green-50 border border-green-200 px-3 py-1.5 rounded shadow-sm text-sm font-bold text-green-700">
-                            <i class="fa-solid fa-calendar-check mr-2 text-green-500"></i> Schedule {selectedSchedule}
-                        </div>
+                        <div class="inline-flex items-center bg-white border border-gray-200 px-3 py-1.5 rounded shadow-sm text-sm font-bold text-gray-700"> <i class="fa-solid fa-door-open mr-2 text-gray-400"></i> {selectedVenue} </div>
+                        <div class="inline-flex items-center bg-green-50 border border-green-200 px-3 py-1.5 rounded shadow-sm text-sm font-bold text-green-700"> <i class="fa-solid fa-calendar-check mr-2 text-green-500"></i> Schedule {selectedSchedule} </div>
                         
+                        {#if !agendaIsExamDay}
                         <button onclick={(e) => openEventModal(e, agendaDateStr)} class="ml-2 inline-flex items-center bg-blue-50 border border-blue-200 px-4 py-1.5 rounded shadow-sm text-sm font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer">
                             <i class="fa-solid fa-plus mr-2 text-blue-500"></i> Add Event
                         </button>
+                        {/if}
                     </div>
                 </div>
                 <button onclick={() => showAgendaModal = false} class="text-gray-400 hover:text-gray-700 bg-white hover:bg-gray-100 border border-gray-200 w-12 h-12 rounded-lg flex items-center justify-center transition shadow-sm">
@@ -727,37 +657,39 @@
             </div>
 
             <div class="flex-1 overflow-y-auto p-0 relative bg-white custom-scrollbar flex flex-col">
-                
                 {#if agendaIsFullDayOff && agendaHolidayEvent}
                     <div class="m-6 p-5 bg-red-50 border-l-4 border-red-500 rounded-r-lg text-red-900 flex justify-between items-start gap-4 shadow-sm shrink-0 group/suspend">
                         <div class="flex items-start gap-4">
                             <i class="fa-solid {agendaHolidayEvent.type === 'break' ? 'fa-mug-hot' : 'fa-umbrella-beach'} text-2xl mt-1 text-red-400"></i>
-                            <div>
-                                <div class="font-bold text-lg tracking-tight">Classes Suspended</div>
-                                <div class="text-sm mt-1 opacity-90">{agendaHolidayEvent.title} is currently active. The grid below is suspended for today.</div>
-                            </div>
+                            <div> <div class="font-bold text-lg tracking-tight">Classes Suspended</div> <div class="text-sm mt-1 opacity-90">{agendaHolidayEvent.title} is currently active. The grid below is suspended for today.</div> </div>
                         </div>
                         {#if !agendaHolidayEvent.is_auto}
-                            <button onclick={(e) => confirmDeleteEvent(e, agendaHolidayEvent)} class="text-red-400 hover:text-red-700 bg-white/50 hover:bg-white border border-red-100 px-3 py-1.5 rounded transition font-bold text-sm shadow-sm flex items-center gap-2">
-                                <i class="fa-solid fa-trash-can"></i> Delete Event
-                            </button>
+                            <button onclick={(e) => confirmDeleteEvent(e, agendaHolidayEvent)} class="text-red-400 hover:text-red-700 bg-white/50 hover:bg-white border border-red-100 px-3 py-1.5 rounded transition font-bold text-sm shadow-sm flex items-center gap-2"> <i class="fa-solid fa-trash-can"></i> Delete Event </button>
                         {/if}
+                    </div>
+                {/if}
+
+                {#if agendaIsExamDay && agendaExamEvent}
+                    <div class="m-6 p-5 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg text-blue-900 flex justify-between items-center gap-4 shadow-sm shrink-0">
+                        <div class="flex items-start gap-4">
+                            <i class="fa-solid fa-file-pen text-2xl mt-1 text-blue-400"></i>
+                            <div> 
+                                <div class="font-bold text-lg tracking-tight">{agendaExamEvent.title} Active</div> 
+                                <div class="text-sm mt-1 opacity-90">Regular classes are suspended. Only scheduled exams are shown on the grid below.</div> 
+                            </div>
+                        </div>
+                        <button onclick={() => navigateToDataTab(agendaExamEvent)} class="text-sm font-bold text-blue-600 bg-white hover:bg-blue-100 px-4 py-2 rounded-lg border border-blue-300 shadow-sm transition flex items-center gap-2 cursor-pointer">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i> Manage in Data Tab
+                        </button>
                     </div>
                 {/if}
 
                 {#if agendaItems.filter(i => !i.isClass && (!i.start_time || !i.end_time)).length > 0}
                     <div class="mx-6 mt-6 flex flex-wrap gap-2 shrink-0">
-                        {#each agendaItems.filter(i => !i.isClass && (!i.start_time || !i.end_time)) as ev}
+                        {#each agendaItems.filter(i => !i.isClass && (!i.start_time || !i.end_time) && i.type !== 'exam') as ev}
                             <div class="bg-yellow-100 text-yellow-800 border border-yellow-300 px-4 py-2 rounded text-sm font-bold shadow-sm flex items-center gap-3 group/bannerevent">
-                                <span>
-                                    {#if ev.is_auto} <i class="fa-solid fa-lock text-yellow-600 mr-1.5"></i> {/if}
-                                    <i class="fa-solid fa-star"></i> {ev.title} (All Day)
-                                </span>
-                                {#if !ev.is_auto}
-                                    <button onclick={(e) => confirmDeleteEvent(e, ev)} class="text-yellow-600 hover:text-red-600 opacity-50 group-hover/bannerevent:opacity-100 transition">
-                                        <i class="fa-solid fa-trash-can"></i>
-                                    </button>
-                                {/if}
+                                <span> {#if ev.is_auto} <i class="fa-solid fa-lock text-yellow-600 mr-1.5"></i> {/if} <i class="fa-solid fa-star"></i> {ev.title} (All Day) </span>
+                                {#if !ev.is_auto} <button onclick={(e) => confirmDeleteEvent(e, ev)} class="text-yellow-600 hover:text-red-600 opacity-50 group-hover/bannerevent:opacity-100 transition"> <i class="fa-solid fa-trash-can"></i> </button> {/if}
                             </div>
                         {/each}
                     </div>
@@ -768,49 +700,32 @@
                         <thead>
                             <tr>
                                 <th class="w-20 sticky left-0 bg-white z-20 border-b border-gray-200"></th>
-                                {#each agendaColumns as col}
-                                    <th class="px-2 py-4 text-gray-700 font-bold text-center border-b border-gray-200 min-w-[280px]">{col}</th>
-                                {/each}
+                                {#each agendaColumns as col} <th class="px-2 py-4 text-gray-700 font-bold text-center border-b border-gray-200 min-w-[280px]">{col}</th> {/each}
                             </tr>
                         </thead>
                         <tbody>
                             {#each times as time}
                                 <tr>
-                                    <td class="text-xs font-medium text-gray-400 text-right pr-3 border-r border-gray-200 align-top h-12 sticky left-0 bg-white z-10 pt-2">
-                                        {#if time.endsWith('00')} {time} {/if}
-                                    </td>
-                                    
+                                    <td class="text-xs font-medium text-gray-400 text-right pr-3 border-r border-gray-200 align-top h-12 sticky left-0 bg-white z-10 pt-2"> {#if time.endsWith('00')} {time} {/if} </td>
                                     {#each agendaColumns as room}
-                                        {@const gridTime = time}
-                                        {@const startMins = parseTimeStr(gridTime)}
                                         {@const startingItem = getStartingItem(time, room)}
-
                                         {#if startingItem}
                                             <td class="p-0 relative align-top" rowspan={calculateRowspan(startingItem.start_time, startingItem.end_time)}>
                                                 <div class="absolute top-1 bottom-1 left-1 right-1 rounded-lg shadow-md p-3 flex flex-col justify-between text-white border border-black/10 group overflow-y-auto custom-scrollbar"
-                                                     style="background-color: {startingItem.isClass ? getSubjectColor(startingItem.course, startingItem.class_id) : '#F6C000'}; color: {startingItem.isClass ? 'white' : '#713F12'}; border-color: {startingItem.isClass ? 'rgba(0,0,0,0.1)' : '#FDE047'};">
+                                                     style="{startingItem.isExam ? 'background-color: #2563EB; color: white; border-color: #1D4ED8;' : `background-color: ${startingItem.isClass ? getSubjectColor(startingItem.course, startingItem.class_id) : '#F6C000'}; color: ${startingItem.isClass ? 'white' : '#713F12'}; border-color: ${startingItem.isClass ? 'rgba(0,0,0,0.1)' : '#FDE047'};`}">
                                                     
                                                     <div>
-                                                        <div class="font-bold text-lg leading-tight drop-shadow-sm">
-                                                            {startingItem.isClass ? `${startingItem.course} ${startingItem.class_id}` : startingItem.title}
-                                                        </div>
-                                                        <div class="text-sm font-medium opacity-90 mt-1 drop-shadow-sm">
-                                                            {displayTime(startingItem.start_time)} - {displayTime(startingItem.end_time)}
-                                                        </div>
-                                                        <div class="text-sm opacity-90 mt-1 drop-shadow-sm font-semibold">
-                                                            {startingItem.isClass ? startingItem.instructor : startingItem.type?.toUpperCase()}
-                                                        </div>
+                                                        <div class="font-bold text-lg leading-tight drop-shadow-sm"> {startingItem.isClass ? `${startingItem.course} ${startingItem.class_id}` : startingItem.title} </div>
+                                                        <div class="text-sm font-medium opacity-90 mt-1 drop-shadow-sm"> {displayTime(startingItem.start_time)} - {displayTime(startingItem.end_time)} </div>
+                                                        <div class="text-sm opacity-90 mt-1 drop-shadow-sm font-semibold"> {startingItem.isClass ? startingItem.instructor : startingItem.type.toUpperCase()} </div>
                                                     </div>
 
                                                     <div class="mt-3 text-right">
-                                                        {#if startingItem.isClass && !agendaIsFullDayOff}
-                                                            <button onclick={(e) => cancelSpecificClass(e, startingItem)} class="bg-black/20 hover:bg-red-500 hover:text-white text-white px-3 py-1.5 rounded font-bold text-xs transition-colors backdrop-blur-sm shadow-sm">
-                                                                <i class="fa-solid fa-ban"></i> Cancel Class
-                                                            </button>
+                                                        {#if startingItem.isExam}
+                                                            {:else if startingItem.isClass && !agendaIsFullDayOff}
+                                                            <button onclick={(e) => cancelSpecificClass(e, startingItem)} class="bg-black/20 hover:bg-red-500 hover:text-white text-white px-3 py-1.5 rounded font-bold text-xs transition-colors backdrop-blur-sm shadow-sm"> <i class="fa-solid fa-ban"></i> Cancel Class </button>
                                                         {:else if !startingItem.isClass && !startingItem.is_auto}
-                                                            <button onclick={(e) => confirmDeleteEvent(e, startingItem)} class="bg-yellow-900/10 hover:bg-red-500 hover:text-white text-yellow-900 px-3 py-1.5 rounded font-bold text-xs transition-colors shadow-sm border border-yellow-900/20">
-                                                                <i class="fa-solid fa-trash-can"></i> Delete Event
-                                                            </button>
+                                                            <button onclick={(e) => confirmDeleteEvent(e, startingItem)} class="bg-yellow-900/10 hover:bg-red-500 hover:text-white text-yellow-900 px-3 py-1.5 rounded font-bold text-xs transition-colors shadow-sm border border-yellow-900/20"> <i class="fa-solid fa-trash-can"></i> Delete Event </button>
                                                         {/if}
                                                     </div>
                                                 </div>
@@ -837,9 +752,7 @@
                             <div class="bg-red-50 text-red-800 border border-red-200 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-4 shadow-sm">
                                 <span><i class="fa-solid fa-ban text-red-500 mr-1.5"></i> {c.course} {c.class_id} ({displayTime(c.start_time)} - {displayTime(c.end_time)}) - {c.location}</span>
                                 <div class="w-px h-5 bg-red-200"></div>
-                                <button onclick={(e) => undoCancellation(e, c)} class="text-red-500 hover:text-red-700 transition" title="Restore Class to Grid">
-                                    <i class="fa-solid fa-rotate-left"></i> Undo
-                                </button>
+                                <button onclick={(e) => undoCancellation(e, c)} class="text-red-500 hover:text-red-700 transition" title="Restore Class to Grid"> <i class="fa-solid fa-rotate-left"></i> Undo </button>
                             </div>
                         {/each}
                     </div>
@@ -850,137 +763,75 @@
     </div>
     {/if}
 
-    {#if showExportPreviewModal}
-    <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-        <div class="bg-white rounded-lg p-6 w-[700px] shadow-xl max-h-[80vh] flex flex-col">
-            <h2 class="text-xl font-bold mb-2">Export Preview</h2>
-            <p class="text-sm text-gray-600 mb-4">Venue: <span class="font-bold">{selectedVenue}</span> | Range: <span class="font-bold">{exportStartDate}</span> to <span class="font-bold">{exportEndDate}</span></p>
-            
-            <div class="flex-1 overflow-y-auto border border-gray-200 rounded-lg mb-4">
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-gray-50 sticky top-0 border-b border-gray-200">
-                        <tr><th class="px-4 py-2 text-gray-600">Date</th><th class="px-4 py-2 text-gray-600">Course</th><th class="px-4 py-2 text-gray-600">Type</th><th class="px-4 py-2 text-gray-600">Time</th><th class="px-4 py-2 text-gray-600">Location</th></tr>
-                    </thead>
-                    <tbody>
-                        {#if exportDataPreview.length === 0} <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No active classes found in this date range.</td></tr> {/if}
-                        {#each exportDataPreview as row}
-                            <tr class="border-b border-gray-100 hover:bg-gray-50">
-                                <td class="px-4 py-2 font-medium">{row.date}</td>
-                                <td class="px-4 py-2 font-bold text-blue-700">{row.course}</td>
-                                <td class="px-4 py-2">{row.type}</td>
-                                <td class="px-4 py-2 text-gray-600">{row.time}</td>
-                                <td class="px-4 py-2 text-gray-600">{row.location}</td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
+    {#if showAddTermModal}
+        <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center z-[100]">
+            <div class="bg-white rounded-lg p-6 w-[500px] shadow-xl">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">Add Academic Year</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Academic Year</label>
+                    <input type="text" bind:value={newTermYear} placeholder="e.g. 2026-2027" class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
+                </div>
 
-            <div class="flex justify-end gap-2">
-                <button onclick={() => showExportPreviewModal = false} class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded transition">Cancel</button>
-                <button onclick={downloadCSV} class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded font-medium transition" disabled={exportDataPreview.length === 0}><i class="fa-solid fa-download mr-1"></i> Download CSV</button>
-            </div>
-        </div>
-    </div>
-    {/if}
-
-    {#if showAddEventModal}
-    <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center z-[100]">
-        <div class="bg-white rounded-lg p-6 w-[500px] shadow-xl">
-            <h2 class="text-xl font-bold mb-4">Add Event / Exception</h2>
-            
-            <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200 flex justify-between items-center">
-                <p class="text-sm text-gray-600">Date: <span class="font-bold text-gray-900">{selectedDateForEvent}</span></p>
-                {#if viewedTerm}
-                    <p class="text-sm text-gray-600">Term: <span class="font-bold text-gray-900">{viewedTerm.academic_year} ({formatSemName(viewedTerm.semester)})</span></p>
-                {/if}
-            </div>
-
-            <form onsubmit={(e) => { e.preventDefault(); saveEvent(); }}>
-                <div class="flex flex-col gap-4 mb-6">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Apply to Schedule Draft:</label>
-                        <select bind:value={newEventScheduleTarget} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none bg-green-50 font-medium">
-                            <option value="All">All Schedules (Global Event)</option>
-                            <option value="1">Schedule 1 Only</option>
-                            <option value="2">Schedule 2 Only</option>
-                            <option value="3">Schedule 3 Only</option>
-                        </select>
-                    </div>
-
+                <div class="bg-gray-50 p-4 rounded border border-gray-200 mb-4">
+                    <h4 class="font-bold text-gray-700 text-sm mb-2">1st Semester</h4>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Type of Event</label>
-                            <select bind:value={newEventType} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
-                                <option value="holiday">Holiday</option>
-                                <option value="break">Break</option>
-                                <option value="other">Others</option>
-                            </select>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                            <input type="date" bind:value={s1Start} class="w-full border border-gray-300 rounded p-1.5 focus:ring-green-500 focus:outline-none text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Affected Venue</label>
-                            <select bind:value={newEventVenue} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
-                                <option value="All Venues">All Venues</option>
-                                {#each rooms as room}
-                                    <option value={room.name}>{room.name}</option>
-                                {/each}
-                            </select>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                            <input type="date" bind:value={s1End} class="w-full border border-gray-300 rounded p-1.5 focus:ring-green-500 focus:outline-none text-sm">
                         </div>
                     </div>
+                </div>
 
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Event Title</label>
-                        <input type="text" bind:value={newEventTitle} placeholder="e.g. Independence Day, Dept Meeting..." class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
-                    </div>
-
-                    {#if newEventType === 'holiday' || newEventType === 'break'}
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional, for multi-day breaks)</label>
-                        <input type="date" bind:value={newEventEndDate} min={selectedDateForEvent} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
-                    </div>
-                    {/if}
-
-                    {#if newEventType !== 'holiday' && newEventType !== 'break'}
+                <div class="bg-gray-50 p-4 rounded border border-gray-200 mb-4">
+                    <h4 class="font-bold text-gray-700 text-sm mb-2">2nd Semester</h4>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Start Time (Optional)</label>
-                            <input type="time" bind:value={newEventStartTime} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                            <input type="date" bind:value={s2Start} class="w-full border border-gray-300 rounded p-1.5 focus:ring-green-500 focus:outline-none text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">End Time (Optional)</label>
-                            <input type="time" bind:value={newEventEndTime} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
+                            <label class="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                            <input type="date" bind:value={s2End} class="w-full border border-gray-300 rounded p-1.5 focus:ring-green-500 focus:outline-none text-sm">
                         </div>
                     </div>
-                    {/if}
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded border border-gray-200 mb-6">
+                    <h4 class="font-bold text-gray-700 text-sm mb-2">Midyear</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                            <input type="date" bind:value={mStart} class="w-full border border-gray-300 rounded p-1.5 focus:ring-green-500 focus:outline-none text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                            <input type="date" bind:value={mEnd} class="w-full border border-gray-300 rounded p-1.5 focus:ring-green-500 focus:outline-none text-sm">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex justify-end gap-2">
-                    <button type="button" onclick={() => showAddEventModal = false} class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded transition">Cancel</button>
-                    <button type="submit" disabled={isSavingEvent} class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded font-medium transition disabled:opacity-50">
-                        {isSavingEvent ? 'Saving...' : 'Save Event'}
+                    <button class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-bold" onclick={resetTermModal}>Cancel</button>
+                    <button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm" onclick={saveNewTerm} disabled={isSavingTerm}>
+                        {isSavingTerm ? 'Saving...' : 'Save Academic Year'}
                     </button>
                 </div>
-            </form>
+            </div>
         </div>
-    </div>
     {/if}
+
 </div>
 
 <style>
-    .always-show-spinners { 
-        -moz-appearance: textfield; 
-        appearance: textfield; 
-    }
-    .always-show-spinners::-webkit-inner-spin-button,
-    .always-show-spinners::-webkit-outer-spin-button { opacity: 1; display: block; }
+    .always-show-spinners { -moz-appearance: textfield; appearance: textfield; }
+    .always-show-spinners::-webkit-inner-spin-button, .always-show-spinners::-webkit-outer-spin-button { opacity: 1; display: block; }
     .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
-    
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(15px) scale(0.98); }
-        to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    .animate-fade-in-up {
-        animation: fadeInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .animate-fade-in-up { animation: fadeInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 </style>

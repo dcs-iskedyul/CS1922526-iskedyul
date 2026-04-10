@@ -302,11 +302,11 @@ export function parseForWarnings(subjects){
             if (course in lab_classes){
                 (lab_classes[course]).push(subjects[i].days)
             }
-            else{ //no lab classes yet for this course
+            else{ // no lab classes yet for this course
                 lab_classes[course] = [subjects[i].days]
             }   
         }
-        else{ //a lec class
+        else{ // a lec class
             if (course in lec_classes){
                 lec_classes[course].push(subjects[i])
             }
@@ -315,7 +315,7 @@ export function parseForWarnings(subjects){
             }
         }
         var instr = subjects[i].instructor
-        if(!(instructors.includes(instr))){ //no instructor yet
+        if(!(instructors.includes(instr))){ // no instructor yet
             instructor_classes[instr] = subjects.filter(a => a.instructor == instr)
             instructors.push(instr)
             // console.log("WARNINGS: Instructor Classes are: ", instructor_classes.instr)
@@ -336,7 +336,7 @@ export function parseForWarnings(subjects){
     console.log(lec_classes)
 
     for(var key in lec_classes){
-        var subj_classes = lec_classes[key] //only classes of the same course
+        var subj_classes = lec_classes[key] // only classes of the same course
         console.log(subj_classes)
         for(i = 0; i < subj_classes.length; i++){
             for(var j = i+1; j<subj_classes.length; j++) {
@@ -391,4 +391,54 @@ export function parseForWarnings(subjects){
     return [lab_warnings, same_time_warnings, consecutive_warnings]
 
 
+}
+
+export function parseForExamConflicts(data) {
+    var conflicts = [];
+    console.log("Parsing EXAM conflicts with data:", data);
+    
+    for (var i = 0; i < data.length; i++) {
+        let clas = data[i];
+        if (!clas.start_time || !clas.end_time) continue;
+        
+        for (var j = i + 1; j < data.length; j++) {
+            let n_clas = data[j];
+            
+            // Only compare exams on the exact same date
+            if (clas.date !== n_clas.date) continue; 
+            if (!n_clas.start_time || !n_clas.end_time) continue;
+
+            // Exams don't use 'days', so we strictly check time overlap
+            if (timeOnlyConflict(clas, n_clas)) {
+                let types_of_conflict = [];
+
+                // Room Conflict: Same room booked at the same time
+                if (clas.location === n_clas.location && clas.location !== 'TBA') {
+                    types_of_conflict.push("Time & Room Overlap");
+                }
+
+                // Year Level Conflict: Different courses, same year level, overlapping time
+                if (clas.course !== n_clas.course && clas.year === n_clas.year && clas.year !== '-' && clas.year) {
+                    types_of_conflict.push("Year Level Conflict");
+                }
+
+                // NOTE: Instructor Conflict is intentionally omitted for Exams
+
+                if (types_of_conflict.length > 0) {
+                    const class1Id = clas.section || clas.class_id;
+                    const class2Id = n_clas.section || n_clas.class_id;
+                    
+                    conflicts.push([
+                        clas.course + ' ' + class1Id, 
+                        n_clas.course + ' ' + class2Id, 
+                        types_of_conflict.join(", "), 
+                        clas.date // Store date instead of schedule number
+                    ]);
+                }
+            }
+        }
+    }
+    
+    console.log("Total EXAM conflicts found:", conflicts.length);
+    return conflicts;
 }
