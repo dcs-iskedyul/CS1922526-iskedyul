@@ -35,32 +35,28 @@
 	// @: Archive Module - Academic Years functions
 	async function fetchAcademicYears() {
 		const { data, error } = await supabase
-			.from('academic_years')
-			.select('year')
-			.order('year', { ascending: true });
+			.from('academic_terms')
+			.select('academic_year');
 
 		if (error) {
 			console.error('Error fetching academic years:', error);
 			return;
 		}
 
-		if (data) {
-			const sortedData = data.sort((a, b) => {
-				const yearA = parseInt(a.year.split('-')[0]);
-				const yearB = parseInt(b.year.split('-')[0]);
+		if (data && data.length > 0) {
+            // Extract unique years and sort
+			academicYears = [...new Set(data.map(item => item.academic_year))].sort((a, b) => {
+				const yearA = parseInt(a.split('-')[0]);
+				const yearB = parseInt(b.split('-')[0]);
 				return yearA - yearB;
 			});
 
-			academicYears = data.map(item => item.year);
-
 			if (selectedAcademicYear === "" && academicYears.length > 0) {
-
 				const savedYear = localStorage.getItem('iskedyul_saved_academic_year');
-
 				if (savedYear && academicYears.includes(savedYear)) {
 					selectedAcademicYear = savedYear;
 				} else {
-					selectedAcademicYear = academicYears[academicYears.length - 1]; // Set to the latest academic year
+					selectedAcademicYear = academicYears[academicYears.length - 1];
 				}
 				recomputeDemandAnalysis();
 			}
@@ -450,7 +446,8 @@
 
 	function handleSemesterChange(sem){
 		selectedSemester = sem;
-		obligations = obligationClasses[selectedSemester];
+        // Fallback to empty array if Midyear doesn't have obligations in store.js
+		obligations = obligationClasses[selectedSemester] || []; 
 
 		currentAnalysis = [];
 		demandData[selectedSchedule] = {rawDemand: [], analysis: {}};
@@ -1501,44 +1498,30 @@
 						onchange={handleAcademicYearChange}
 						class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500"
 					>
+			{#if academicYears.length === 0}
+					<option value="">No Terms Found</option>
+			{/if}
 						{#each academicYears as year}
 							<option value={year}> A.Y. {year}</option>
 						{/each}
 					</select>
 
-					<form
-						onsubmit={(e) => { e.preventDefault(); addNewAcademicYear(); }}
-						class="flex items-center space-x-2"
-					>
-						<input
-							type="text"
-							bind:value={newAcademicYearInput}
-							placeholder="e.g., 2024-2025"
-							class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-green-500 focus:border-green-500 block px-3 py-2"
-							required
-						/>
+		</div>
 
-						<button
-							type="submit"
-							class="text-white bg-green-600 hover:bg-green-700 font-medium rounded-lg text-sm px-3 py-2"
-						>
-							Add Year
-						</button>
-					</form>
-				</div>
-
-				<!-- Semesters -->
-				<div class = "flex gap-4">
-					{#each semesters as sem}
-					<button 
-					class="px-4 py-2 rounded-lg font-medium transition-colors {selectedSemester === sem ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 '}"
-					onclick={() => handleSemesterChange(sem)}
-					>
-						Semester {sem}
+				<div class="flex gap-4">
+					<button class="px-4 py-2 rounded-lg font-medium transition-colors {selectedSemester === '1' ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}" onclick={() => handleSemesterChange('1')}>
+						1st Semester
 					</button>
-					{/each}
+					<button class="px-4 py-2 rounded-lg font-medium transition-colors {selectedSemester === '2' ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}" onclick={() => handleSemesterChange('2')}>
+						2nd Semester
+					</button>
+					<button class="px-4 py-2 rounded-lg font-medium transition-colors {selectedSemester === 'Midyear' ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}" onclick={() => handleSemesterChange('Midyear')}>
+						Midyear
+					</button>
 				</div>
+				
 			</div>
+
 			<!-- Download CSVs -->
 			<button 
 				class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
