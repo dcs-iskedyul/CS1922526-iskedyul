@@ -763,6 +763,62 @@
     </div>
     {/if}
 
+    {#if showAddEventModal}
+    <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center z-[100]">
+        <div class="bg-white rounded-lg p-6 w-[500px] shadow-xl">
+            <h2 class="text-xl font-bold mb-4">Add Event / Exception</h2>
+            <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200 flex justify-between items-center">
+                <p class="text-sm text-gray-600">Date: <span class="font-bold text-gray-900">{selectedDateForEvent}</span></p>
+                {#if viewedTerm} <p class="text-sm text-gray-600">Term: <span class="font-bold text-gray-900">{viewedTerm.academic_year} ({formatSemName(viewedTerm.semester)})</span></p> {/if}
+            </div>
+            <form onsubmit={(e) => { e.preventDefault(); saveEvent(); }}>
+                <div class="flex flex-col gap-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Apply to Schedule Draft:</label>
+                        <select bind:value={newEventScheduleTarget} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none bg-green-50 font-medium"> <option value="All">All Schedules (Global Event)</option> <option value="1">Schedule 1 Only</option> <option value="2">Schedule 2 Only</option> <option value="3">Schedule 3 Only</option> </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Type of Event</label>
+                            <select bind:value={newEventType} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none"> <option value="holiday">Holiday</option> <option value="break">Break</option> <option value="other">Others</option> </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Affected Venue</label>
+                            <select bind:value={newEventVenue} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none"> <option value="All Venues">All Venues</option> {#each rooms as room} <option value={room.name}>{room.name}</option> {/each} </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Event Title</label>
+                        <input type="text" bind:value={newEventTitle} placeholder="e.g. Independence Day, Dept Meeting..." class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
+                    </div>
+                    {#if newEventType === 'holiday' || newEventType === 'break'}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional, for multi-day breaks)</label>
+                        <input type="date" bind:value={newEventEndDate} min={selectedDateForEvent} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none">
+                    </div>
+                    {/if}
+                    {#if newEventType !== 'holiday' && newEventType !== 'break'}
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Start Time (Optional)</label>
+                            <select bind:value={newEventStartTime} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none"> <option value="07:00"> 7:00 AM </option> <option value="07:30"> 7:30 AM </option> <option value="08:00"> 8:00 AM </option> <option value="08:30"> 8:30 AM </option> <option value="09:00"> 9:00 AM </option> <option value="09:30"> 9:30 AM </option> <option value="10:00"> 10:00 AM </option> <option value="10:30"> 10:30 AM </option> <option value="11:00"> 11:00 AM </option> <option value="11:30"> 11:30 AM </option> <option value="12:00"> 12:00 PM </option> <option value="12:30"> 12:30 PM </option> <option value="13:00"> 1:00 PM </option> <option value="13:30"> 1:30 PM </option> <option value="14:00"> 2:00 PM </option> <option value="14:30"> 2:30 PM </option> <option value="15:00"> 3:00 PM </option> <option value="15:30"> 3:30 PM </option> <option value="16:00"> 4:00 PM </option> <option value="16:30"> 4:30 PM </option> <option value="17:00"> 5:00 PM </option> <option value="17:30"> 5:30 PM </option> <option value="18:00"> 6:00 PM </option> <option value="18:30"> 6:30 PM </option> <option value="19:00"> 7:00 PM </option> </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">End Time (Optional)</label>
+                            <select bind:value={newEventEndTime} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none"> <option value="07:30"> 7:30 AM </option> <option value="08:00"> 8:00 AM </option> <option value="08:30"> 8:30 AM </option> <option value="09:00"> 9:00 AM </option> <option value="09:30"> 9:30 AM </option> <option value="10:00"> 10:00 AM </option> <option value="10:30"> 10:30 AM </option> <option value="11:00"> 11:00 AM </option> <option value="11:30"> 11:30 AM </option> <option value="12:00"> 12:00 PM </option> <option value="12:30"> 12:30 PM </option> <option value="13:00"> 1:00 PM </option> <option value="13:30"> 1:30 PM </option> <option value="14:00"> 2:00 PM </option> <option value="14:30"> 2:30 PM </option> <option value="15:00"> 3:00 PM </option> <option value="15:30"> 3:30 PM </option> <option value="16:00"> 4:00 PM </option> <option value="16:30"> 4:30 PM </option> <option value="17:00"> 5:00 PM </option> <option value="17:30"> 5:30 PM </option> <option value="18:00"> 6:00 PM </option> <option value="18:30"> 6:30 PM </option> <option value="19:00"> 7:00 PM </option> <option value="19:30"> 7:30 PM </option> <option value="20:00"> 8:00 PM </option> </select>
+                        </div>
+                    </div>
+                    {/if}
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick={() => showAddEventModal = false} class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded transition">Cancel</button>
+                    <button type="submit" disabled={isSavingEvent} class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded font-medium transition disabled:opacity-50"> {isSavingEvent ? 'Saving...' : 'Save Event'} </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {/if}
+
     {#if showAddTermModal}
         <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center z-[100]">
             <div class="bg-white rounded-lg p-6 w-[500px] shadow-xl">
