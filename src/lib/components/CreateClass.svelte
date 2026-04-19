@@ -14,7 +14,8 @@
 		newInstr1,
 		newStart1,
 		newEnd1,
-		newLoc1;
+		newLoc1,
+		newDays1;
 		
 
         async function sendNewData() {
