@@ -200,6 +200,78 @@
         goto(targetUrl);
     }
 
+    function downloadICS() {
+        if (!exportStartDate || !exportEndDate) return alert("Please select a date range.");
+        if (exportStartDate > exportEndDate) return alert("Start date must be before end date.");
+
+        let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Iskedyul//Calendar Export//EN\n";
+        
+        let startParts = exportStartDate.split('-');
+        let endParts = exportEndDate.split('-');
+        let start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+        let end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+        
+        const formatDateICS = (dateObj, timeStr) => {
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            if (!timeStr) return `${year}${month}${day}`;
+            
+            const mins = parseTimeStr(timeStr);
+            const h = String(Math.floor(mins / 60)).padStart(2, '0');
+            const m = String(mins % 60).padStart(2, '0');
+            return `${year}${month}${day}T${h}${m}00`;
+        };
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const dayOfWeek = d.getDay();
+            
+            let activeTerm = allTerms.find(t => dateStr >= t.start_date && dateStr <= t.end_date);
+            
+            const eventsForThisDay = allCalendarEvents.filter(e => {
+                const matchesVenue = selectedVenue === "All Venues" || e.venue === null || e.venue === selectedVenue;
+                const matchesSched = selectedSchedule === "All" || e.schedule === null || e.schedule === selectedSchedule;
+                if (!matchesVenue || !matchesSched) return false;
+                if (e.end_date) return dateStr >= e.date && dateStr <= e.end_date;
+                return dateStr === e.date;
+            });
+
+            const autoHol = autoHolidays.find(h => h.m === d.getMonth() + 1 && h.d === d.getDate());
+            if (autoHol) eventsForThisDay.push({ type: 'holiday', title: autoHol.title, venue: null, schedule: null });
+
+            const isFullDayOff = eventsForThisDay.some(e => e.type === 'holiday' || e.type === 'break');
+            const isExamDay = eventsForThisDay.some(e => e.type === 'exam');
+            const cancellations = eventsForThisDay.filter(e => e.type === 'cancellation');
+            
+            const examEvent = eventsForThisDay.find(e => e.type === 'exam');
+            if (!activeTerm && examEvent) activeTerm = { academic_year: examEvent.academic_year, semester: examEvent.semester };
+
+            if (activeTerm && !isFullDayOff) {
+                if (venueClasses.length > 0 && !isExamDay) {
+                    let projected = venueClasses.filter(c => isClassOnDay(c.days, dayOfWeek) && c.academic_year === activeTerm.academic_year && c.semester === activeTerm.semester);
+                    projected.forEach(c => {
+                        const isCancelled = cancellations.some(cancelEvent => cancelEvent.title === `${c.course} ${c.class_id}` && (cancelEvent.venue === null || cancelEvent.venue === c.location));
+                        if (!isCancelled) icsContent += `BEGIN:VEVENT\nSUMMARY:${c.course} ${c.class_id}\nLOCATION:${c.location}\nDTSTART;TZID=Asia/Manila:${formatDateICS(d, c.start_time)}\nDTEND;TZID=Asia/Manila:${formatDateICS(d, c.end_time)}\nEND:VEVENT\n`;
+                    });
+                }
+                if (examVenueClasses.length > 0 && isExamDay) {
+                    let dayExams = examVenueClasses.filter(e => e.date === dateStr && e.academic_year === activeTerm.academic_year && e.semester === activeTerm.semester);
+                    dayExams.forEach(e => icsContent += `BEGIN:VEVENT\nSUMMARY:[EXAM] ${e.course} ${e.class_id}\nLOCATION:${e.location}\nDTSTART;TZID=Asia/Manila:${formatDateICS(d, e.start_time)}\nDTEND;TZID=Asia/Manila:${formatDateICS(d, e.end_time)}\nEND:VEVENT\n`);
+                }
+            }
+
+            eventsForThisDay.filter(e => e.type !== 'cancellation').forEach(e => {
+                icsContent += `BEGIN:VEVENT\nSUMMARY:${e.title}\n${e.venue ? `LOCATION:${e.venue}\n` : ''}${e.start_time && e.end_time ? `DTSTART;TZID=Asia/Manila:${formatDateICS(d, e.start_time)}\nDTEND;TZID=Asia/Manila:${formatDateICS(d, e.end_time)}\n` : `DTSTART;VALUE=DATE:${formatDateICS(d)}\n`}END:VEVENT\n`;
+            });
+        }
+        icsContent += "END:VCALENDAR\n";
+        const blob = new Blob([icsContent], { type: 'text/calendar' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `Iskedyul_${exportStartDate}_to_${exportEndDate}.ics`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+        showExportPreviewModal = false;
+    }
+
     $effect(() => {
         if (browser) {
             sessionStorage.setItem('cal_venue', selectedVenue);
@@ -523,6 +595,10 @@
             
             <div class="flex flex-col items-end gap-2">
                 <div class="flex items-center gap-3">
+                    <button onclick={() => showExportPreviewModal = true} class="bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 py-2 px-4 rounded-lg font-medium shadow-sm transition flex items-center gap-2">
+                        <i class="fa-solid fa-file-export"></i> Export .ics
+                    </button>
+
                     <select bind:value={selectedSchedule} class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                         <option value="1">Schedule 1</option> <option value="2">Schedule 2</option> <option value="3">Schedule 3</option>
                     </select>
@@ -875,6 +951,35 @@
                     <button class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-bold" onclick={resetTermModal}>Cancel</button>
                     <button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm" onclick={saveNewTerm} disabled={isSavingTerm}>
                         {isSavingTerm ? 'Saving...' : 'Save Academic Year'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    {#if showExportPreviewModal}
+        <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center z-[100]">
+            <div class="bg-white rounded-lg p-6 w-[500px] shadow-xl">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">Export Calendar (.ics)</h3>
+                <p class="text-sm text-gray-600 mb-4">Select the date range to export events and active classes for the currently selected schedule and venue.</p>
+                
+                <div class="bg-gray-50 p-4 rounded border border-gray-200 mb-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                            <input type="date" bind:value={exportStartDate} class="w-full border border-gray-300 rounded p-1.5 focus:ring-blue-500 focus:outline-none text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                            <input type="date" bind:value={exportEndDate} class="w-full border border-gray-300 rounded p-1.5 focus:ring-blue-500 focus:outline-none text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <button class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-bold" onclick={() => { showExportPreviewModal = false; exportStartDate = ''; exportEndDate = ''; }}>Cancel</button>
+                    <button class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm" onclick={downloadICS}>
+                        Download .ics
                     </button>
                 </div>
             </div>
