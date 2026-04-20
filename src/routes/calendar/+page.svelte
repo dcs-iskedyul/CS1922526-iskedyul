@@ -36,11 +36,11 @@
 
     let showAddEventModal = $state(false);
     let selectedDateForEvent = $state("");
-    let EventType = $state("holiday"); 
-    let EventTitle = $state("");
-    let EventVenue = $state("All Venues");
-    let EventScheduleTarget = $state("All"); 
-    let EventStartTime = $state("");
+    let newEventType = $state("holiday"); 
+    let newEventTitle = $state("");
+    let newEventVenue = $state("All Venues");
+    let newEventScheduleTarget = $state("All"); 
+    let newEventStartTime = $state("");
     let newEventEndTime = $state("");
     let newEventEndDate = $state(""); 
     let isSavingEvent = $state(false);
