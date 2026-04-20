@@ -36,11 +36,11 @@
 
     let showAddEventModal = $state(false);
     let selectedDateForEvent = $state("");
-    let newEventType = $state("holiday"); 
-    let newEventTitle = $state("");
-    let newEventVenue = $state("All Venues");
-    let newEventScheduleTarget = $state("All"); 
-    let newEventStartTime = $state("");
+    let EventType = $state("holiday"); 
+    let EventTitle = $state("");
+    let EventVenue = $state("All Venues");
+    let EventScheduleTarget = $state("All"); 
+    let EventStartTime = $state("");
     let newEventEndTime = $state("");
     let newEventEndDate = $state(""); 
     let isSavingEvent = $state(false);
@@ -192,7 +192,7 @@
         }
     }
 
-    // --- NEW: Router function to jump to specific Data tab! ---
+    // NEW: Router function to jump to specific Data tab!
     function navigateToDataTab(examEvent) {
         if (!examEvent) return;
         const type = examEvent.title.includes('Midterm') ? 'Midterm' : 'Final';
@@ -516,7 +516,7 @@
             const isFullDayOff = eventsForThisDay.some(e => e.type === 'holiday' || e.type === 'break');
             const isExamDay = eventsForThisDay.some(e => e.type === 'exam'); 
             
-            // --- NEW: Fix for "Wrong Date" out of bounds exams! ---
+            // NEW: Fix for "Wrong Date" out of bounds exams! 
             let activeTermForDay = allTerms.find(t => dateStr >= t.start_date && dateStr <= t.end_date);
             const examEvent = eventsForThisDay.find(e => e.type === 'exam');
             if (!activeTermForDay && examEvent) {
