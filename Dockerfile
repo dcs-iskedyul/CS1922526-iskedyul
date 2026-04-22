@@ -9,6 +9,14 @@ RUN npm ci
 # Copy the rest of the source code
 COPY . .
 
+# Accept Render's automatic build args
+ARG PUBLIC_SUPABASE_URL
+ARG PUBLIC_SUPABASE_ANON_KEY
+
+# Set them as environment variables for the build step
+ENV PUBLIC_SUPABASE_URL=$PUBLIC_SUPABASE_URL
+ENV PUBLIC_SUPABASE_ANON_KEY=$PUBLIC_SUPABASE_ANON_KEY
+
 # Build the SvelteKit app (this creates the 'build' folder)
 RUN npm run build
 
