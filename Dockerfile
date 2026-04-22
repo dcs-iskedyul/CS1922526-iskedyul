@@ -1,4 +1,3 @@
-# Stage 1: Build the application
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -18,7 +17,6 @@ RUN npm prune --production
 
 # ---------------------------------------------------------
 
-# Stage 2: Run the production application
 FROM node:18-alpine
 
 WORKDIR /app
@@ -33,7 +31,10 @@ EXPOSE 3000
 
 # Set environment variables for production
 ENV NODE_ENV=production
-ENV PORT=3000
+# Allow Render to override the port, but provide a fallback
+ENV PORT=3000 
+# Bind to all network interfaces (Crucial for Render)
+ENV HOST=0.0.0.0 
 
 # Run as a non-root user for better security
 USER node
