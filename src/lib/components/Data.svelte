@@ -281,7 +281,7 @@
         update = !update;
     }
 
-    // --- NEW: Add Exam Date pushes to Calendar! ---
+    // --- Add Exam Date pushes to Calendar! ---
     async function addExamDate() {
         if (!newExamDateInput) return;
         if (examDates.includes(newExamDateInput)) { toast.error("This date already exists!"); return; }
@@ -307,7 +307,7 @@
         toast.success(`Date added! ${selectedExamType} banner injected into Calendar.`);
     }
 
-    // --- NEW: Edit Date Function ---
+    // --- Edit Date Function ---
     function openEditDateModal() {
         editExamDateInput = selectedExamDate;
         showEditExamDateModal = true;
@@ -477,7 +477,7 @@
 		}
 	}
 
-    // --- NEW: Exam CSV Uploader & Parser ---
+    // --- Exam CSV Uploader & Parser ---
     async function handleExamUpload(event) {
         const file = event.target.files[0];
         if (!file) { hasUploadedFile = false; classes = []; return; }
@@ -1327,10 +1327,11 @@
 		if (!error && data) instructors = data;
 	}
 
-    // --- NEW: SESSION MEMORY MANAGER & KEYBOARD ESCAPE ---
+    // --- SESSION MEMORY MANAGER & KEYBOARD ESCAPE ---
 	// @: Archive Module - Added fetching of academic years
 	onMount(async () => {
         let urlOverrides = false;
+        let hasSession = false;
         if (browser) {
             // Check URL for Router Jump
             const params = new URLSearchParams(window.location.search);
@@ -1342,25 +1343,27 @@
                 if (params.get('date')) selectedExamDate = params.get('date');
                 urlOverrides = true;
                 window.history.replaceState({}, '', '/data');
-            } else {
+            } else if (sessionStorage.getItem('data_ay')) {
                 // Restore from Session Memory!
-                if (sessionStorage.getItem('data_ay')) selectedAcademicYear = sessionStorage.getItem('data_ay');
-                if (sessionStorage.getItem('data_sem')) selectedSemester = sessionStorage.getItem('data_sem');
-                if (sessionStorage.getItem('data_sched')) selectedSchedule = sessionStorage.getItem('data_sched');
-                if (sessionStorage.getItem('data_mode')) viewMode = sessionStorage.getItem('data_mode');
-                if (sessionStorage.getItem('data_examtype')) selectedExamType = sessionStorage.getItem('data_examtype');
-                if (sessionStorage.getItem('data_examdate')) selectedExamDate = sessionStorage.getItem('data_examdate');
+                selectedAcademicYear = sessionStorage.getItem('data_ay');
+                selectedSemester = sessionStorage.getItem('data_sem');
+                selectedSchedule = sessionStorage.getItem('data_sched');
+                viewMode = sessionStorage.getItem('data_mode');
+                selectedExamType = sessionStorage.getItem('data_examtype');
+                selectedExamDate = sessionStorage.getItem('data_examdate');
+                hasSession = true;
             }
         }
 
 		await fetchAcademicYears();
         
-        if (urlOverrides) {
+        if (urlOverrides || hasSession) {
             recomputeDemandAnalysis();
             await fetchExamDates();
             if (selectedExamDate && !examDates.includes(selectedExamDate)) {
                 examDates = [...examDates, selectedExamDate].sort();
             }
+            update = !update; // Force UI refresh to render conflicts!
         }
 
 		await fetchInstructorsForModal();
@@ -1810,74 +1813,29 @@
 			{/key}
 			
 			<div class="bg-white rounded-lg shadow p-4 border border-gray-200">
-				<h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Schedule</h2>
+				<h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Schedule CSV</h2>
 				{#if !hasUploadedFile}
 					<div class="flex flex-col items-center bg-gray-50 border border-dashed border-gray-300 rounded p-4">
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-						</svg>
-						<p class="text-sm text-gray-600 mb-3 text-center">Upload Schedule CSV</p>
-						<button 
-							class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer text-sm flex items-center gap-1"
-							onclick={openFileUpload}
-							>
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-							</svg>
-							Upload Faculty Loading
-						</button>
-						<input 
-							type="file" 
-							id="fileInput" 
-							accept=".csv" 
-							onchange={handleUpload} 
-							class="hidden"
-							bind:this={fileInputRef}
-						>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+						<p class="text-sm font-bold text-gray-700 mb-1 text-center">Upload Schedule CSV</p>
+                        <p class="text-xs text-gray-500 mb-3 text-center">Format: Course, Type, Section, Day, Time, Room, Instructor</p>
+						<button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer text-sm flex items-center gap-1" onclick={openFileUpload}><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg> Upload File </button>
+						<input type="file" id="fileInput" accept=".csv" onchange={handleUpload} class="hidden" bind:this={fileInputRef} >
 					</div>
 				{:else}
 					<div class="bg-gray-50 rounded border border-gray-200 p-3 mb-3">
 						<div class="flex items-center gap-2">
-							<div class="bg-green-100 p-1.5 rounded">
-								<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-								</svg>
-							</div>
+							<div class="bg-green-100 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
 							<div class="flex-1 truncate">
-								<p class="text-sm font-medium text-gray-900 truncate">
-									{document.getElementById('fileInput')?.files[0]?.name || 'classes.csv'}
-								</p>
-								<p class="text-xs text-gray-500 text-center">{classes.length} classes</p>
-								<p class="text-xs text-blue-500 text-center">Format: Faculty Loading</p>
+								<p class="text-sm font-medium text-gray-900 truncate"> {document.getElementById('fileInput')?.files[0]?.name || 'classes.csv'} </p>
+								<p class="text-xs text-gray-500 text-center">{classes.length} classes pending</p>
 							</div>
-							<button 
-								onclick={() => {
-									hasUploadedFile = false;
-									classes = [];
-									document.getElementById('fileInput').value = '';
-								}}
-								class="text-gray-400 hover:text-gray-500"
-								aria-label="cancel"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-									<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-								</svg>
-							</button>
+							<button onclick={() => { hasUploadedFile = false; classes = []; document.getElementById('fileInput').value = ''; }} class="text-gray-400 hover:text-gray-500" aria-label="cancel"> <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg> </button>
 						</div>
 					</div>
 					<div class="flex gap-2">
-						<button 
-							onclick={insertData} 
-							class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center"
-						>
-							Insert Classes
-						</button>
-						<button 
-							onclick={replaceData} 
-							class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center"
-						>
-							Replace All
-						</button>
+						<button onclick={insertData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Add to Schedule </button>
+						<button onclick={replaceData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Replace Entire Schedule </button>
 					</div>
 				{/if}
 			</div>
@@ -1939,33 +1897,33 @@
 			</div>
 		</div>
         {:else if viewMode === 'Exam'}
-        <div class="bg-white rounded-lg shadow p-4 border border-gray-200">
-				<h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Schedule CSV</h2>
-				{#if !hasUploadedFile}
-					<div class="flex flex-col items-center bg-gray-50 border border-dashed border-gray-300 rounded p-4">
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-						<p class="text-sm font-bold text-gray-700 mb-1 text-center">Upload Schedule CSV</p>
-                        <p class="text-xs text-gray-500 mb-3 text-center">Format: Course, Type, Section, Day, Time, Room, Instructor</p>
-						<button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer text-sm flex items-center gap-1" onclick={openFileUpload}><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg> Upload File </button>
-						<input type="file" id="fileInput" accept=".csv" onchange={handleUpload} class="hidden" bind:this={fileInputRef} >
-					</div>
-				{:else}
-					<div class="bg-gray-50 rounded border border-gray-200 p-3 mb-3">
-						<div class="flex items-center gap-2">
-							<div class="bg-green-100 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
-							<div class="flex-1 truncate">
-								<p class="text-sm font-medium text-gray-900 truncate"> {document.getElementById('fileInput')?.files[0]?.name || 'classes.csv'} </p>
-								<p class="text-xs text-gray-500 text-center">{classes.length} classes pending</p>
-							</div>
-							<button onclick={() => { hasUploadedFile = false; classes = []; document.getElementById('fileInput').value = ''; }} class="text-gray-400 hover:text-gray-500" aria-label="cancel"> <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg> </button>
-						</div>
-					</div>
-					<div class="flex gap-2">
-						<button onclick={insertData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Add to Schedule </button>
-						<button onclick={replaceData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Replace Entire Schedule </button>
-					</div>
-				{/if}
-			</div>
+        <div class="bg-white rounded-lg shadow p-4 border border-gray-200 w-full mb-6">
+            <h2 class="text-lg font-semibold mb-3 text-gray-700 text-center">Batch Exam CSV Upload</h2>
+            {#if !hasUploadedFile}
+                <div class="flex flex-col items-center bg-gray-50 border border-dashed border-gray-300 rounded p-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                    <p class="text-sm font-bold text-gray-700 mb-1 text-center">Upload Exam CSV</p>
+                    <p class="text-xs text-gray-500 mb-3 text-center">Format: Course, Type, Section, Date, Time, Room, Proctor</p>
+                    <button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer text-sm flex items-center gap-1" onclick={openFileUpload}><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg> Upload File </button>
+                    <input type="file" id="fileInput" accept=".csv" onchange={handleExamUpload} class="hidden" bind:this={fileInputRef} >
+                </div>
+            {:else}
+                <div class="bg-gray-50 rounded border border-gray-200 p-3 mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="bg-green-100 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
+                        <div class="flex-1 truncate">
+                            <p class="text-sm font-medium text-gray-900 truncate"> {document.getElementById('fileInput')?.files[0]?.name || 'exams.csv'} </p>
+                            <p class="text-xs text-gray-500 text-center">{classes.length} exams pending</p>
+                        </div>
+                        <button onclick={() => { hasUploadedFile = false; classes = []; document.getElementById('fileInput').value = ''; }} class="text-gray-400 hover:text-gray-500" aria-label="cancel"> <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg> </button>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick={insertData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Add to Exam Date </button>
+                    <button onclick={replaceData} class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-xs flex-1 text-center font-bold"> Replace All on Date </button>
+                </div>
+            {/if}
+        </div>
         {/if}
 
 		<div class="flex flex-wrap gap-3 mb-4">
