@@ -150,6 +150,12 @@
         return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     }
 
+    function formatToMMDDYYYY(dateStr) {
+        if (!dateStr) return "";
+        const [y, m, d] = dateStr.split('-');
+        return `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${y}`;
+    }
+
     function getStartingItem(time, room) {
         return agendaItems.find(s => !s.isCancelled && timeToGridString(s.start_time) === time && (s.venue === room || s.location === room || s.venue === null));
     }

@@ -68,11 +68,13 @@ export const schedules = [
     "1",
     "2",
     "3",
+    "Exams"
 ]
 
 export const semesters = [
     "1",
-    "2"
+    "2",
+    "Midyear"
 ]
 
 export var instructors = [

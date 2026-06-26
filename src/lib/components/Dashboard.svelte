@@ -1,12 +1,15 @@
 <script>
   import Sidebar from './Sidebar.svelte';
   import { supabase } from '$lib/supabaseClient';
-
-  import { schedules, rooms, instructors, parseForConflicts, conflictsStore } from '$lib/store.js';
-  import { onMount, onDestroy } from 'svelte';
-
+  import { schedules, semesters, parseForConflicts, parseForExamConflicts } from '$lib/store.js';
+  import { onMount } from 'svelte';
 
   let selectedSchedule = $state("1");
+  
+  let academicYears = $state([]);
+  let selectedYear = $state("");
+  let selectedSemester = $state("1"); 
+
   let isLoading = $state(true);
   let stats = $state({
       totalClasses: 0,
@@ -14,57 +17,96 @@
       venuesInUse: 0,
       conflicts: 0
   });
+  
+  // FIX: Added state to store fetched classes for the Summary Table
+  let recentClasses = $state([]); 
   let update = $state(false);
 
-  function handleScheduleChange(schedule) {
-      selectedSchedule = schedule;
+  function handleFilterChange() {
       fetchDashboardData();
       update = !update;
   }
 
-  async function fetchDashboardData() {
-      isLoading = true;
-      
+  function handleScheduleChange(schedule) {
+      selectedSchedule = schedule;
+      handleFilterChange();
+  }
+
+  async function fetchAcademicYears() {
       try {
+          const { data, error } = await supabase
+              .from('academic_terms')
+              .select('academic_year');
+              
+          if (error) {
+              console.error('Error fetching academic years:', error);
+              return;
+          }
+          
+          if (data && data.length > 0) {
+              // Extract unique years and sort numerically based on the first year (e.g., 2024 from 2024-2025)
+              academicYears = [...new Set(data.map(item => item.academic_year))].sort((a, b) => {
+                  const yearA = parseInt(a.split('-')[0]);
+                  const yearB = parseInt(b.split('-')[0]);
+                  return yearA - yearB;
+              });
+              
+              // Set the default dropdown value to the most recent year (last in the sorted array)
+              if (academicYears.length > 0 && (!selectedYear || !academicYears.includes(selectedYear))) {
+                  selectedYear = academicYears[academicYears.length - 1];
+              }
+          } else {
+              // Fallback if the table is completely empty
+              academicYears = ["2024-2025"];
+              selectedYear = "2024-2025";
+          }
+      } catch (error) {
+          console.error("Error in fetchAcademicYears:", error);
+          academicYears = ["2024-2025"];
+          selectedYear = "2024-2025";
+      }
+  }
+
+  async function fetchDashboardData() {
+      if (!selectedYear) return; // Ensure selectedYear is set before fetching data
+
+      isLoading = true;
+      try {
+          // IMPORTANT: Ensure your Supabase columns exactly match 'academic_year' and 'semester'
           const { data: classes, error: classError } = await supabase
               .from('classes')
               .select('*')
+              .eq('academic_year', selectedYear)
+              .eq('semester', selectedSemester)
               .eq('schedule', selectedSchedule);
 
           if (classError) throw classError;
           
           if (!classes || classes.length === 0) {
-              stats = {
-                  totalClasses: 0,
-                  activeInstructors: 0,
-                  venuesInUse: 0,
-                  conflicts: 0
-              };
+              stats = { totalClasses: 0, activeInstructors: 0, venuesInUse: 0, conflicts: 0 };
+              recentClasses = []; 
               isLoading = false;
               return;
           }
           
-          // 1. Classes
+          // Populate the summary table array
+          recentClasses = classes;
+          
+          // Calculate Stats
           const totalClasses = classes.length;
-          
-          // 2. Instructors
           const uniqueInstructors = new Set();
-          classes.forEach(cls => {
-              if (cls.instructor && cls.instructor !== 'TBA') {
-                  uniqueInstructors.add(cls.instructor);
-              }
-          });
-          
-          // 3. Venues
           const uniqueVenues = new Set();
+          
           classes.forEach(cls => {
-              if (cls.location && cls.location !== 'TBA') {
-                  uniqueVenues.add(cls.location);
-              }
+              if (cls.instructor && cls.instructor !== 'TBA') uniqueInstructors.add(cls.instructor);
+              // Handle both potential column names just in case
+              const venue = cls.location || cls.room; 
+              if (venue && venue !== 'TBA') uniqueVenues.add(venue);
           });
           
-          // 4. Conflicts
-          const conflictCount = (parseForConflicts(classes)).length
+          const conflictCount = selectedSchedule === "Exams" 
+              ? parseForExamConflicts(classes).length 
+              : parseForConflicts(classes).length;
           
           stats = {
               totalClasses,
@@ -80,9 +122,12 @@
       }
   }
 
-  onMount(() => {
-      fetchDashboardData();
+  onMount(async () => {
+    isLoading = true;
+    await fetchAcademicYears();
+    await fetchDashboardData();
   });
+
 </script>
 
 <div class="flex">
@@ -91,14 +136,45 @@
   <div class="flex-1 p-6 ml-64">
       <h1 class="text-3xl font-bold text-gray-800 mb-6">Dashboard</h1>
       
-      <!-- Schedule Tabs -->
+      <div class="flex flex-wrap gap-4 mb-6 bg-white p-4 rounded-lg shadow border border-gray-200">
+          <div class="flex flex-col">
+              <label class="text-sm font-medium text-gray-600 mb-1" for="academicYear">Academic Year</label>
+              <select 
+                  id="academicYear" 
+                  bind:value={selectedYear} 
+                  onchange={handleFilterChange} 
+                  class="p-2 border rounded-md bg-gray-50 focus:ring-green-500 focus:border-green-500"
+              >
+                  {#each academicYears as year}
+                      <option value={year}>{year}</option>
+                  {/each}
+              </select>
+          </div>
+
+          <div class="flex flex-col">
+              <label class="text-sm font-medium text-gray-600 mb-1" for="semester">Semester</label>
+              <select 
+                  id="semester" 
+                  bind:value={selectedSemester} 
+                  onchange={handleFilterChange} 
+                  class="p-2 border rounded-md bg-gray-50 focus:ring-green-500 focus:border-green-500"
+              >
+                  {#each semesters as sem}
+                      <option value={sem}>
+                          {sem === '3' || sem === 'Midyear' || sem.toLowerCase().includes('midyear') ? 'Midyear' : `Semester ${sem}`}
+                      </option>
+                  {/each}
+              </select>
+          </div>
+      </div>
+      
       <div class="flex flex-wrap gap-2 mb-6">
           {#each schedules as schedule}
           <button 
               class="px-4 py-2 rounded-lg font-medium transition-colors {selectedSchedule === schedule ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
               onclick={() => handleScheduleChange(schedule)}
           >
-              Schedule {schedule}
+              {schedule === "Exams" ? "Exams" : `Schedule ${schedule}`}
           </button>
           {/each}
       </div>
@@ -109,7 +185,6 @@
                   <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-green-500"></div>
               </div>
           {:else}
-              <!-- Stats Overview -->
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   <div class="bg-white p-5 rounded-lg shadow border border-gray-200">
                       <div class="flex items-center">
@@ -165,6 +240,49 @@
                               <p class="text-xl font-bold">{stats.conflicts}</p>
                           </div>
                       </div>
+                  </div>
+              </div>
+
+              <div class="mt-8 bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                      <h2 class="text-lg font-semibold text-gray-800">Classes Summary</h2>
+                      <span class="text-sm text-gray-500">Showing classes for Schedule {selectedSchedule}</span>
+                  </div>
+                  <div class="overflow-x-auto">
+                      {#if recentClasses.length > 0}
+                          <table class="min-w-full divide-y divide-gray-200">
+                              <thead class="bg-gray-50">
+                                  <tr>
+                                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Course</th>
+                                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
+                                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instructor</th>
+                                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Schedule</th>
+                                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                  </tr>
+                              </thead>
+                              <tbody class="bg-white divide-y divide-gray-200">
+                                  {#each recentClasses as cls}
+                                      <tr class="hover:bg-gray-50 transition-colors">
+                                          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{cls.course || '-'}</td>
+                                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cls.section || cls.class_id || '-'}</td>
+                                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cls.instructor || '-'}</td>
+                                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                              {cls.days ? cls.days : ''} {cls.start_time && cls.end_time ? `${cls.start_time} - ${cls.end_time}` : ''}
+                                          </td>
+                                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cls.location || '-'}</td>
+                                      </tr>
+                                  {/each}
+                              </tbody>
+                          </table>
+                      {:else}
+                          <div class="p-8 text-center flex flex-col items-center">
+                              <svg class="h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                              </svg>
+                              <p class="text-gray-500 text-lg">No classes found for this combination.</p>
+                              <p class="text-gray-400 text-sm mt-1">Double check that your database has classes matching <strong>{selectedYear}</strong>, Semester <strong>{selectedSemester}</strong>, and Schedule <strong>{selectedSchedule}</strong>.</p>
+                          </div>
+                      {/if}
                   </div>
               </div>
           {/if}
