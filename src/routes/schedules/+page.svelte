@@ -21,7 +21,7 @@
     let activeTab = $state('venue');
     let viewMode = $state('Schedule'); // 'Schedule' or 'Exam'
     let selectedSchedule = $state("1"); 
-    let selectedExamType = $state('Midterm');
+    const scheduleDrafts = schedules.filter((schedule) => schedule !== "Exams");
     let selectedExamDate = $state('');
     let examDates = $state([]);
 
@@ -34,7 +34,6 @@
             sessionStorage.setItem('sched_tab', activeTab);
             sessionStorage.setItem('sched_mode', viewMode);
             sessionStorage.setItem('sched_schedule', selectedSchedule);
-            sessionStorage.setItem('sched_examtype', selectedExamType);
             sessionStorage.setItem('sched_examdate', selectedExamDate);
         }
     });
@@ -45,7 +44,6 @@
         if (sessionStorage.getItem('sched_tab')) activeTab = sessionStorage.getItem('sched_tab');
         if (sessionStorage.getItem('sched_mode')) viewMode = sessionStorage.getItem('sched_mode');
         if (sessionStorage.getItem('sched_schedule')) selectedSchedule = sessionStorage.getItem('sched_schedule');
-        if (sessionStorage.getItem('sched_examtype')) selectedExamType = sessionStorage.getItem('sched_examtype');
         if (sessionStorage.getItem('sched_examdate')) selectedExamDate = sessionStorage.getItem('sched_examdate');
         
         await fetchAllTerms();
@@ -67,8 +65,8 @@
 
     async function fetchExamDates() {
         if (!selectedAcademicYear || !selectedSemester) return;
-        const { data: schedData } = await supabase.from('exam_schedules').select('date').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', selectedExamType);
-        const { data: calData } = await supabase.from('calendar_events').select('date').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', 'exam').ilike('title', `${selectedExamType}%`);
+        const { data: schedData } = await supabase.from('exam_schedules').select('date').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
+        const { data: calData } = await supabase.from('calendar_events').select('date').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', 'exam');
 
         let dates = new Set();
         if (schedData) schedData.forEach(d => dates.add(d.date));
@@ -80,7 +78,7 @@
     }
 
     async function setScheduleView(sched) { viewMode = 'Schedule'; selectedSchedule = sched; update = !update; }
-    async function setExamView(type) { viewMode = 'Exam'; selectedExamType = type; await fetchExamDates(); update = !update; }
+    async function setExamView() { viewMode = 'Exam'; await fetchExamDates(); update = !update; }
 
     function formatReadableDate(dateStr) {
         if (!dateStr) return "";
@@ -155,18 +153,17 @@
         </div>
 
         <div class="flex flex-wrap gap-2 mb-6 items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm w-fit">
-            {#each schedules as schedule}
+            {#each scheduleDrafts as schedule}
                 <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Schedule' && selectedSchedule === schedule ? 'bg-green-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setScheduleView(schedule)}> Schedule {schedule} </button>
             {/each}
             <div class="w-px h-8 bg-gray-300 mx-2"></div>
-            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' && selectedExamType === 'Midterm' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setExamView('Midterm')}> Midterms </button>
-            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' && selectedExamType === 'Final' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setExamView('Final')}> Finals </button>
+            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={setExamView}> Exams </button>
         </div>
 
         {#if viewMode === 'Exam'}
         <div class="flex flex-wrap gap-2 mb-6 items-center bg-gray-100 p-3 rounded-lg border border-gray-200 shadow-sm transition-all">
             <span class="text-sm font-bold text-gray-600 mr-2 uppercase tracking-wide"><i class="fa-solid fa-calendar-day mr-1"></i> Date:</span>
-            {#if examDates.length === 0} <span class="text-sm text-gray-400 italic">No {selectedExamType} dates found. Use Data Tab to add exams.</span> {/if}
+            {#if examDates.length === 0} <span class="text-sm text-gray-400 italic">No exam dates found. Use Data Tab to add exams.</span> {/if}
             {#each examDates as date}
                 <button class="px-3 py-1.5 rounded-md text-sm font-bold transition-all {selectedExamDate === date ? 'bg-green-600 text-white shadow-md scale-105 ring-2 ring-green-300' : 'bg-white text-green-700 hover:bg-green-50 border border-gray-300'}" onclick={() => { selectedExamDate = date; update = !update; }}> {formatReadableDate(date)} </button>
             {/each}
@@ -177,17 +174,17 @@
             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-12 mt-6 flex flex-col items-center justify-center text-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                 <h3 class="text-xl font-bold text-gray-700 mb-2">No Exam Dates Available</h3>
-                <p class="text-gray-500 max-w-md">There are no {selectedExamType}s scheduled for this term. Please go to the Data Tab to add exam dates and assign rooms.</p>
+                <p class="text-gray-500 max-w-md">There are no exams scheduled for this term. Please go to the Data Tab to add exam dates and assign rooms.</p>
             </div>
         {:else}
             <div>
                 {#if activeTab == 'venue'}
                     {#key update}
-                    <VenueView {selectedAcademicYear} {selectedSemester} {selectedSchedule} isExamMode={viewMode === 'Exam'} examDate={selectedExamDate} examType={selectedExamType} />
+                    <VenueView {selectedAcademicYear} {selectedSemester} {selectedSchedule} isExamMode={viewMode === 'Exam'} examDate={selectedExamDate} />
                     {/key}
                 {:else if activeTab == 'instructor'}
                     {#key update}
-                    <InstructorView {selectedAcademicYear} {selectedSemester} {selectedSchedule} onDeleteInstructor={toggleDeleteInstructorModal} isExamMode={viewMode === 'Exam'} examDate={selectedExamDate} examType={selectedExamType} />
+                    <InstructorView {selectedAcademicYear} {selectedSemester} {selectedSchedule} onDeleteInstructor={toggleDeleteInstructorModal} isExamMode={viewMode === 'Exam'} examDate={selectedExamDate} />
                     {/key}
                 {/if}
             </div>

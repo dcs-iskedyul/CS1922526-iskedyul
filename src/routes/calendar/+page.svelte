@@ -23,6 +23,7 @@
     let shortcutSem = $state("1");
     let venueClasses = $state([]);
     let examVenueClasses = $state([]); 
+    let isCalendarLoaded = $state(false);
     
     let showAddTermModal = $state(false);
     let newTermYear = $state("");
@@ -280,10 +281,12 @@
     }
 
     $effect(() => {
-        if (browser) {
+        if (browser && isCalendarLoaded) {
             sessionStorage.setItem('cal_venue', selectedVenue);
             sessionStorage.setItem('cal_schedule', selectedSchedule);
             sessionStorage.setItem('cal_date', currentDate.toISOString());
+            sessionStorage.setItem('cal_shortcut_year', shortcutYear);
+            sessionStorage.setItem('cal_shortcut_sem', shortcutSem);
         }
     });
 
@@ -297,6 +300,8 @@
     onMount(async () => {
         if (sessionStorage.getItem('cal_venue')) selectedVenue = sessionStorage.getItem('cal_venue');
         if (sessionStorage.getItem('cal_schedule')) selectedSchedule = sessionStorage.getItem('cal_schedule');
+        if (sessionStorage.getItem('cal_shortcut_year')) shortcutYear = sessionStorage.getItem('cal_shortcut_year');
+        if (sessionStorage.getItem('cal_shortcut_sem')) shortcutSem = sessionStorage.getItem('cal_shortcut_sem');
         const savedDate = sessionStorage.getItem('cal_date');
         if (savedDate) {
             const parsed = new Date(savedDate);
@@ -304,6 +309,7 @@
         }
         await fetchAllTerms();
         await fetchCalendarEvents(); 
+        isCalendarLoaded = true;
     });
 
     async function fetchAllTerms() {
@@ -1093,4 +1099,3 @@
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
     .animate-fade-in-up { animation: fadeInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 </style>
-

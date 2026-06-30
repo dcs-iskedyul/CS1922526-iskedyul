@@ -5,7 +5,7 @@
     import { onMount } from 'svelte';
     
     // Catching the props passed from the parent including Exam overrides
-    let { selectedAcademicYear, selectedSemester, selectedSchedule = "1", isExamMode = false, examDate = "", examType = "" } = $props();
+    let { selectedAcademicYear, selectedSemester, selectedSchedule = "1", isExamMode = false, examDate = "" } = $props();
 
     let selectedRoom = $state("AECH-Accenture Rm");
     let update = $state(true);
@@ -47,7 +47,6 @@
                 semester={selectedSemester} 
                 {isExamMode}
                 {examDate}
-                {examType}
             />
         {/key}
     </div>

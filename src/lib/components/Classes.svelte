@@ -18,7 +18,7 @@
 	let selectedType = $state("")
 	let update = $state(false)
 
-	let { onToggleDeleteModal, schedule, demandData = [], sectionAnalysis = {}, sortCategory = "", filterCategories = [], semester, searchCourse="", searchSection="", academicYear, isExamMode = false, examDate = "", examType = "" } = $props();
+	let { onToggleDeleteModal, schedule, demandData = [], sectionAnalysis = {}, sortCategory = "", filterCategories = [], semester, searchCourse="", searchSection="", academicYear, isExamMode = false, examDate = "" } = $props();
 	
 	let final_subjects = $state([])
 	let final_blocks = $state([])
@@ -225,7 +225,6 @@
 			const res = await supabase
 				.from('exam_schedules')
 				.select()
-				.eq("type", examType)
 				.eq("date", examDate)
 				.eq("semester", semester)
 				.eq("academic_year", academicYear)

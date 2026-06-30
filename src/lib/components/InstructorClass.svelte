@@ -3,9 +3,9 @@
     import { subject_info, schedules, storeClasses } from '$lib/store.js';
     
     // Catching Exam Props and removing local schedule state
-    let { selectedAcademicYear, selectedSemester, selectedSchedule = "1", isExamMode = false, examDate = "", examType = "" } = $props();
+    let { selectedAcademicYear, selectedSemester, selectedSchedule = "1", isExamMode = false, examDate = "" } = $props();
 
-    async function getData(currentSchedule, currentYear, currentSem, isExam, eDate, eType) {
+    async function getData(currentSchedule, currentYear, currentSem, isExam, eDate) {
         if (!currentYear || !currentSem) return [];
         if (isExam && !eDate) return [];
 
@@ -16,7 +16,7 @@
             .order("instructor", { ascending: true });
 
         if (isExam) {
-            query = query.eq("type", eType).eq("date", eDate);
+            query = query.eq("date", eDate);
         } else {
             query = query.eq("schedule", currentSchedule || 1);
         }
@@ -84,7 +84,7 @@
             </tr>
         </thead>
         <tbody>
-            {#await getData(selectedSchedule, selectedAcademicYear, selectedSemester, isExamMode, examDate, examType)}
+            {#await getData(selectedSchedule, selectedAcademicYear, selectedSemester, isExamMode, examDate)}
                 <tr><td colspan="10" class="p-8 text-center text-gray-500 font-medium animate-pulse">Fetching instructor data...</td></tr>
             {:then data}
                 {#if data.length === 0}

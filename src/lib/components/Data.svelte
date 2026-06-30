@@ -30,7 +30,7 @@
 
     // --- NEW EXAM STATE ---
     let viewMode = $state('Schedule'); // 'Schedule' or 'Exam'
-    let selectedExamType = $state('Midterm');
+    const EXAM_TYPE = 'Exam';
     let selectedExamDate = $state('');
     let examDates = $state([]);
     let showAddExamDateModal = $state(false);
@@ -83,14 +83,14 @@
     async function fetchExamDates() {
         if (!selectedAcademicYear || !selectedSemester) return;
         
-        // Fetch from Exam table AND Calendar Events to ensure no orphans!
+        // Fetch from Exam table AND Calendar Events to ensure no orphans.
         const { data: schedData } = await supabase
             .from('exam_schedules').select('date')
-            .eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', selectedExamType);
+            .eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
             
         const { data: calData } = await supabase
             .from('calendar_events').select('date')
-            .eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', 'exam').ilike('title', `${selectedExamType}%`);
+            .eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).eq('type', 'exam');
 
         let dates = new Set();
         if (schedData) schedData.forEach(d => dates.add(d.date));
@@ -226,6 +226,7 @@
 
 	// Shows which schedule and semester is selected to show their corresponding classes and obligations.
 	let selectedSchedule = $state("1")
+	const scheduleDrafts = schedules.filter((schedule) => schedule !== "Exams");
 
 	let selectedSemester = $state("1")
 
@@ -274,16 +275,26 @@
         update = !update;
     }
 
-    async function setExamView(type) {
+    async function setExamView() {
         viewMode = 'Exam';
-        selectedExamType = type;
         await fetchExamDates();
         update = !update;
+    }
+
+    function isDateWithinSelectedAcademicYear(dateStr) {
+        if (!dateStr || !selectedAcademicYear) return false;
+
+        const [startYear, endYear] = selectedAcademicYear.split('-').map(Number);
+        const inputYear = Number(dateStr.split('-')[0]);
+
+        if ([startYear, endYear, inputYear].some(Number.isNaN)) return false;
+        return inputYear >= startYear && inputYear <= endYear;
     }
 
     // --- Add Exam Date pushes to Calendar! ---
     async function addExamDate() {
         if (!newExamDateInput) return;
+        if (!isDateWithinSelectedAcademicYear(newExamDateInput)) { toast.error("Invalid Year"); return; }
         if (examDates.includes(newExamDateInput)) { toast.error("This date already exists!"); return; }
 
         // Push the event to the Calendar!
@@ -292,7 +303,7 @@
             semester: selectedSemester,
             date: newExamDateInput,
             type: 'exam',
-            title: `${selectedExamType} Exams`,
+            title: 'Exams',
             venue: null,
             schedule: null
         };
@@ -304,7 +315,7 @@
         newExamDateInput = '';
         update = !update;
 
-        toast.success(`Date added! ${selectedExamType} banner injected into Calendar.`);
+        toast.success('Exam date added to Calendar.');
     }
 
     // --- Edit Date Function ---
@@ -317,10 +328,10 @@
         if (!editExamDateInput || editExamDateInput === selectedExamDate) { showEditExamDateModal = false; return; }
         if (examDates.includes(editExamDateInput)) { toast.error("This date already exists in the exam schedule!"); return; }
 
-        const { error: calErr } = await supabase.from('calendar_events').update({ date: editExamDateInput }).eq('date', selectedExamDate).eq('type', 'exam').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).ilike('title', `${selectedExamType}%`);
+        const { error: calErr } = await supabase.from('calendar_events').update({ date: editExamDateInput }).eq('date', selectedExamDate).eq('type', 'exam').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
         if (calErr) { toast.error("Error updating calendar."); return; }
 
-        const { error: schedErr } = await supabase.from('exam_schedules').update({ date: editExamDateInput }).eq('date', selectedExamDate).eq('type', selectedExamType).eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
+        const { error: schedErr } = await supabase.from('exam_schedules').update({ date: editExamDateInput }).eq('date', selectedExamDate).eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
         if (schedErr) { toast.error("Error updating exams."); return; }
 
         toast.success("Exam date successfully moved!");
@@ -336,10 +347,10 @@
         if (!confirm(`Are you sure you want to delete the date ${formatReadableDate(selectedExamDate)}? This will safely remove ALL exams scheduled on this day.`)) return;
         
         // Delete from calendar banner
-        await supabase.from('calendar_events').delete().eq('date', selectedExamDate).eq('type', 'exam').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester).ilike('title', `${selectedExamType}%`);
+        await supabase.from('calendar_events').delete().eq('date', selectedExamDate).eq('type', 'exam').eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
         
         // Delete actual scheduled blocks on this day
-        await supabase.from('exam_schedules').delete().eq('date', selectedExamDate).eq('type', selectedExamType).eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
+        await supabase.from('exam_schedules').delete().eq('date', selectedExamDate).eq('academic_year', selectedAcademicYear).eq('semester', selectedSemester);
 
         toast.success("Exam date and all associated exams securely deleted.");
         
@@ -369,7 +380,7 @@
         let query = supabase.from(targetTable).select('*').eq("semester", selectedSemester).eq("academic_year", selectedAcademicYear);
 
         if (viewMode === 'Exam') {
-            query = query.eq('type', selectedExamType).eq('date', selectedExamDate);
+            query = query.eq('date', selectedExamDate);
         } else {
             query = query.eq('schedule', selectedSchedule);
         }
@@ -386,11 +397,11 @@
         let headers, csvRows;
 
         if (viewMode === 'Exam') {
-            headers = ['Course', 'Type', 'Section', 'Date', 'Time', 'Room', 'Instructor'];
+            headers = ['Course', 'Section', 'Date', 'Time', 'Room', 'Instructor'];
             csvRows = [
                 headers.join(','),
                 ...data.map(row => [
-                    `"${row.course || ''}"`, `"${row.type || ''}"`, `"${row.class_id || ''}"`, `"${row.date || ''}"`,
+                    `"${row.course || ''}"`, `"${row.class_id || ''}"`, `"${row.date || ''}"`,
                     `="${row.start_time && row.end_time ? formatTime(row.start_time).slice(0,-2) + '-' + formatTime(row.end_time).slice(0,-2) : ''}"`,
                     `"${row.location || ''}"`, `"${row.instructor || ''}"`
                 ].join(','))
@@ -420,7 +431,7 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = viewMode === 'Exam' ? `${selectedExamType}_Exams_${selectedExamDate}.csv` : `classes_draft_${selectedSchedule}.csv`;
+		a.download = viewMode === 'Exam' ? `Exams_${selectedExamDate}.csv` : `classes_draft_${selectedSchedule}.csv`;
 		document.body.appendChild(a);
 		a.click();
 		document.body.removeChild(a);
@@ -493,7 +504,7 @@
                         let matchedRoom = findMatchingRoom(row.Room);
                         let fullInstructorName = findInstructorFullName(row.Instructor);
                         
-                        return { course: row.Course, type: row.Type || selectedExamType, class_id: row.Section, instructor: fullInstructorName, start_time: start_time, end_time: end_time, location: matchedRoom, date: row.Date, size: getVenueCapacity(matchedRoom), academic_year: selectedAcademicYear, semester: selectedSemester };
+                        return { course: row.Course, type: EXAM_TYPE, class_id: row.Section, instructor: fullInstructorName, start_time: start_time, end_time: end_time, location: matchedRoom, date: row.Date, size: getVenueCapacity(matchedRoom), academic_year: selectedAcademicYear, semester: selectedSemester };
                     });
                 
                 classes = transformedData;
@@ -549,7 +560,7 @@
             const targetTable = viewMode === 'Exam' ? 'exam_schedules' : 'classes';
             
             if (viewMode === 'Exam') {
-                await supabase.from(targetTable).delete().eq("date", selectedExamDate).eq("type", selectedExamType).eq("semester", selectedSemester).eq("academic_year", selectedAcademicYear); 
+                await supabase.from(targetTable).delete().eq("date", selectedExamDate).eq("semester", selectedSemester).eq("academic_year", selectedAcademicYear); 
             } else {
                 const { error: deleteError } = await supabase
                 .from('classes')
@@ -1337,7 +1348,6 @@
             const params = new URLSearchParams(window.location.search);
             if (params.get('mode') === 'Exam') {
                 viewMode = 'Exam';
-                selectedExamType = params.get('type') || 'Midterm';
                 if (params.get('sem')) selectedSemester = params.get('sem');
                 if (params.get('ay')) selectedAcademicYear = params.get('ay');
                 if (params.get('date')) selectedExamDate = params.get('date');
@@ -1349,7 +1359,6 @@
                 selectedSemester = sessionStorage.getItem('data_sem');
                 selectedSchedule = sessionStorage.getItem('data_sched');
                 viewMode = sessionStorage.getItem('data_mode');
-                selectedExamType = sessionStorage.getItem('data_examtype');
                 selectedExamDate = sessionStorage.getItem('data_examdate');
                 hasSession = true;
             }
@@ -1381,7 +1390,6 @@
             sessionStorage.setItem('data_sem', selectedSemester);
             sessionStorage.setItem('data_sched', selectedSchedule);
             sessionStorage.setItem('data_mode', viewMode);
-            sessionStorage.setItem('data_examtype', selectedExamType);
             sessionStorage.setItem('data_examdate', selectedExamDate);
         }
     });
@@ -1480,7 +1488,7 @@
                 if (!newStart || !newEnd || !newLoc) { acts.add({mode: 'danger', message: '⚠️ Time and location are required.'}); submit = false; return; }
 
                 const newExamData = {
-                    course: newCourse, type: selectedExamType, class_id: newClass, instructor: newInstr,
+                    course: newCourse, type: EXAM_TYPE, class_id: newClass, instructor: newInstr,
                     start_time: newStart, end_time: newEnd, location: newLoc, date: selectedExamDate,
                     year: subject_info[newCourse] ? subject_info[newCourse]["year"] : "-",
                     size: getVenueCapacity(newLoc), academic_year: selectedAcademicYear, semester: selectedSemester
@@ -1695,7 +1703,7 @@
 		</div>
 
         <div class="flex flex-wrap gap-2 mb-6 items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm w-fit">
-            {#each schedules as schedule}
+            {#each scheduleDrafts as schedule}
                 <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Schedule' && selectedSchedule === schedule ? 'bg-green-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setScheduleView(schedule)}>
                     Schedule {schedule}
                 </button>
@@ -1703,11 +1711,8 @@
             
             <div class="w-px h-8 bg-gray-300 mx-2"></div>
             
-            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' && selectedExamType === 'Midterm' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setExamView('Midterm')}>
-                Midterms
-            </button>
-            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' && selectedExamType === 'Final' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={() => setExamView('Final')}>
-                Finals
+            <button class="px-4 py-2 rounded-md font-bold transition-colors {viewMode === 'Exam' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}" onclick={setExamView}>
+                Exams
             </button>
         </div>
 
@@ -1903,7 +1908,7 @@
                 <div class="flex flex-col items-center bg-gray-50 border border-dashed border-gray-300 rounded p-4">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                     <p class="text-sm font-bold text-gray-700 mb-1 text-center">Upload Exam CSV</p>
-                    <p class="text-xs text-gray-500 mb-3 text-center">Format: Course, Type, Section, Date, Time, Room, Proctor</p>
+                    <p class="text-xs text-gray-500 mb-3 text-center">Format: Course, Section, Date, Time, Room, Proctor</p>
                     <button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded cursor-pointer text-sm flex items-center gap-1" onclick={openFileUpload}><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg> Upload File </button>
                     <input type="file" id="fileInput" accept=".csv" onchange={handleExamUpload} class="hidden" bind:this={fileInputRef} >
                 </div>
@@ -1953,7 +1958,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
                 <h3 class="text-xl font-bold text-gray-700 mb-2">No Exam Date Selected</h3>
-                <p class="text-gray-500 max-w-md">You haven't selected a date for the {selectedExamType}s yet. Click the "Add Date" button above to start scheduling exams.</p>
+                <p class="text-gray-500 max-w-md">You haven't selected an exam date yet. Click the "Add Date" button above to start scheduling exams.</p>
             </div>
         {:else}
 		<div>
@@ -1971,7 +1976,6 @@
                     searchSection={handleSearch()[1]}
                     isExamMode={viewMode === 'Exam'}
                     examDate={selectedExamDate}
-                    examType={selectedExamType}
 				/>
 		{/key}
 		</div>
@@ -1983,7 +1987,7 @@
 <div class="backdrop z-100">
     <div class="delete-modal z-200" use:tapOutside={() => showAddExamDateModal = false}>
         <h3 class="title2 mb-4 font-bold text-gray-800">Add New Exam Date</h3>
-        <p class="text-sm text-gray-600 mb-2">Select a date for this {selectedExamType} period.</p>
+        <p class="text-sm text-gray-600 mb-2">Select a date for exams.</p>
         <input type="date" bind:value={newExamDateInput} class="w-full border border-gray-300 rounded p-2 focus:ring-green-500 focus:outline-none mb-4">
         
         <div class="flex justify-end gap-2">
@@ -2017,7 +2021,7 @@
             
             {#if viewMode === 'Exam'}
             <div class="mb-4 bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm flex justify-between items-center">
-                <p class="text-sm text-green-800"><i class="fa-solid fa-circle-info mr-2"></i>You are scheduling a <strong>{selectedExamType}</strong> on <strong>{formatReadableDate(selectedExamDate)}</strong>.</p>
+                <p class="text-sm text-green-800"><i class="fa-solid fa-circle-info mr-2"></i>You are scheduling an <strong>exam</strong> on <strong>{formatReadableDate(selectedExamDate)}</strong>.</p>
             </div>
             {/if}
             

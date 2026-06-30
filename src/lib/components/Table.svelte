@@ -2,7 +2,7 @@
     import { supabase } from '$lib/supabaseClient.js';
     
     // Catching the Exam Mode Props
-    let { classroom, schedule, academicYear, semester, isExamMode = false, examDate = "", examType = "" } = $props();
+    let { classroom, schedule, academicYear, semester, isExamMode = false, examDate = "" } = $props();
 
     let subjects = [];
     let final_subjects = $state([]);
@@ -17,7 +17,7 @@
     }
 
     // Data Fetching with Dual Engine
-    async function getData(currentRoom, currentSchedule, currentYear, currentSem, isExam, eDate, eType) {
+    async function getData(currentRoom, currentSchedule, currentYear, currentSem, isExam, eDate) {
         if (!currentYear || !currentSem) return [];
         if (isExam && !eDate) return []; // Safety check for exams
 
@@ -29,7 +29,7 @@
             .eq("semester", currentSem);
 
         if (isExam) {
-            query = query.eq("type", eType).eq("date", eDate);
+            query = query.eq("date", eDate);
         } else {
             query = query.eq("schedule", currentSchedule);
         }
@@ -176,7 +176,7 @@
     }
 </script>
 
-{#await getData(classroom, schedule, academicYear, semester, isExamMode, examDate, examType)}
+{#await getData(classroom, schedule, academicYear, semester, isExamMode, examDate)}
     <div class="p-8 text-center text-gray-500 font-medium animate-pulse">
         Fetching schedule data...
     </div>
